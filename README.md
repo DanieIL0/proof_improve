@@ -1,0 +1,50 @@
+# proof_improve
+
+
+mirabelle_proof_improve.ML
+structure Mirabelle_Proof_Improve: MIRABELLE_ACTION =
+struct
+  open Proof_Improve
+  fun make_action ({timeout, ...} : Mirabelle.action_context) =
+    let
+      val generous_timeout = Time.scale 20.0 timeout
+
+      fun run ({pre, ...} : Mirabelle.command) =
+        case Timeout.apply generous_timeout (proof_improve (SOME timeout)) pre of
+          Rewrite_Succeeded _ => "succeeded"
+        | _ => ""
+    in
+      ("", {run = run, finalize = K ""})
+    end
+
+  val () = Mirabelle.register_action "try0" make_action
+
+end;
+
+
+Mirabelle.thy
+theory Mirabelle
+  imports Sledgehammer Predicate_Compile Presburger
+begin
+
+ML_file ‹Tools/Mirabelle/mirabelle_util.ML›
+ML_file ‹Tools/Mirabelle/mirabelle.ML›
+
+ML ‹
+signature MIRABELLE_ACTION = sig
+  val make_action : Mirabelle.action_context -> string * Mirabelle.action
+end
+›
+
+ML_file ‹Tools/Mirabelle/mirabelle_arith.ML›
+ML_file ‹Tools/Mirabelle/mirabelle_metis.ML›
+ML_file ‹Tools/Mirabelle/mirabelle_presburger.ML›
+ML_file ‹Tools/Mirabelle/mirabelle_quickcheck.ML›
+ML_file ‹Tools/Mirabelle/mirabelle_sledgehammer_filter.ML›
+ML_file ‹Tools/Mirabelle/mirabelle_sledgehammer.ML›
+ML_file ‹Tools/Mirabelle/mirabelle_try0.ML›
+ML_file ‹Tools/Proof_Improve/proof_improve_scorer.ML›
+ML_file ‹Tools/Proof_Improve/proof_improve_rewriter.ML›
+ML_file ‹Tools/Proof_Improve/proof_improve.ML›
+ML_file ‹Tools/Mirabelle/mirabelle_proof_improve.ML›
+end
