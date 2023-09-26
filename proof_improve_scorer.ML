@@ -1,0 +1,149 @@
+open Term
+open Thm
+
+val weight_length = 0.2
+val weight_lemma = 0.3
+val weight_entropy = 0.05
+val weight_dependency = 0.15
+val weight_time = 0.15
+val weight_symbol_to_text_ratio = 0.05
+val weight_branching_factor = 0.1
+
+(*TODO*)
+val max_length = 10000
+val max_lemma = 100
+val max_entropy = 1 (*TODO*)
+val max_dependency = 5
+val max_time = 60 
+val max_branching_factor = 50
+
+fun calculate_dependency_score (st: Proof.state) : int =
+  let
+    val ctxt = Proof.context_of st
+    val thms = Proof.the_facts st
+    fun is_external_thm thm = 
+      (case try (Proof_Context.get_fact ctxt) (Facts.named (Thm.get_name_hint thm)) of
+         NONE => true
+       | SOME _ => false)
+    val external_thms_count = length (filter is_external_thm thms)
+    val facts_count = length thms
+  in
+    external_thms_count + facts_count
+  end;
+
+fun count_lemmas (st: Proof.state) : int =
+  let
+    val {goal, ...} = Proof.simple_goal st
+    val lemma_count = length (Thm.prems_of goal)
+  in
+    lemma_count
+  end;
+
+fun calculate_length_score (st: Proof.state) : int =
+  let
+    val {goal, ...} = Proof.simple_goal st
+    val goal_term = Thm.prop_of goal
+    val goal_str = Syntax.string_of_term_global (Proof.theory_of st) goal_term
+    val length_of_proof = String.size goal_str
+  in
+    length_of_proof
+  end;
+
+
+(*dummy*)
+fun compress_ints (ints: int list) : int list =
+  let
+    val str = String.implode (map Char.chr ints)
+    val compressed_str = String.map (fn ch => if Char.isSpace ch then Char.chr 0 else ch) str
+  in
+    map Char.ord (String.explode compressed_str)
+  end;
+
+fun calculate_entropy_score (st: Proof.state) : int =
+  let
+    val {goal, ...} = Proof.simple_goal st
+    val goal_term = Thm.prop_of goal
+    val proof_str = Syntax.string_of_term_global (Proof.theory_of st) goal_term
+
+    val ints = map Char.ord (String.explode proof_str)
+    val compressed_ints = compress_ints ints
+    val entropy_score = length compressed_ints
+  in
+    entropy_score
+  end;
+
+
+(*check wether included in entropy*)
+fun calculate_symbol_to_text_ratio (st: Proof.state) : int =
+  let
+    val {goal, ...} = Proof.simple_goal st
+    val goal_term = Thm.prop_of goal
+    val proof_str = Syntax.string_of_term_global (Proof.theory_of st) goal_term
+
+    val total_chars = String.size proof_str
+    fun count_symbols (str, acc) =
+      if String.size str = 0 then acc
+      else
+        let 
+          val ch = String.sub (str, 0)
+        in
+          count_symbols (String.extract (str, 1, NONE), if Char.isAlphaNum ch then acc else acc + 1)
+        end
+
+    val symbol_count = count_symbols (proof_str, 0)
+    val text_count = total_chars - symbol_count
+  in
+    if text_count = 0 then 0 else symbol_count * 100 div text_count
+  end;
+
+
+fun calculate_branching_factor (st: Proof.state) : int =
+  let
+    val {goal, ...} = Proof.simple_goal st
+    val branches = map Thm.prems_of [goal]  (* Wrapping goal in list as we have a single goal *)
+
+    val flat_branches = List.concat branches
+  in
+    length flat_branches
+  end;
+
+
+fun calculate_time_score (st: Proof.state) : int = 1 
+(*TODO*)
+
+fun normalize (value: int, max_value: int) : int =
+  if value >= max_value then 100
+  else (value * 100) div max_value
+
+
+signature PROOF_IMPROVE_SCORER =
+sig
+  val score : Proof.state -> int
+end;
+
+structure ProofImproveScorer : PROOF_IMPROVE_SCORER =
+struct             
+  fun score st =
+    let
+      (* Convert int to real for calculations *)
+      val length_score = real (normalize (calculate_length_score st, max_length))
+      val lemma_score = real (normalize (count_lemmas st, max_lemma))
+      val entropy_score = real (normalize (calculate_entropy_score st, max_entropy))
+      val dependency_score = real (normalize (calculate_dependency_score st, max_dependency))
+      val time_score = real (normalize (calculate_time_score st, max_time))
+      val symbol_to_text_ratio_score = real (calculate_symbol_to_text_ratio st)  (* Already normalized *)
+      val branching_factor_score = real (normalize (calculate_branching_factor st, max_branching_factor))
+
+      val weighted_sum = (length_score * weight_length) + (lemma_score * weight_lemma) + 
+                         (entropy_score * weight_entropy) + (dependency_score * weight_dependency) + 
+                         (time_score * weight_time) + (symbol_to_text_ratio_score * weight_symbol_to_text_ratio) + 
+                         (branching_factor_score * weight_branching_factor)
+
+      val total_weight = weight_length + weight_lemma + weight_entropy + weight_dependency + 
+                         weight_time + weight_symbol_to_text_ratio + weight_branching_factor
+
+      val normalized_score = weighted_sum * 100.0 / total_weight
+    in
+      Real.round normalized_score
+    end;
+end;
