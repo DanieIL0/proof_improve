@@ -9,14 +9,14 @@ val weight_time = 0.15
 val weight_symbol_to_text_ratio = 0.05
 val weight_branching_factor = 0.1
 
-(*TODO*)
-val max_length = 10000
-val max_lemma = 100
-val max_entropy = 1 (*TODO*)
-val max_dependency = 5
+val max_length = 80000
+val max_lemma = 70
+val max_entropy = 70000
+val max_dependency = 100
 val max_time = 60 
-val max_branching_factor = 50
-
+val max_branching_factor = 55
+(*test entire score for complex lemma - vs simple lemma*)
+(*not linear scale for ranking - check slegdehammer*)
 fun calculate_dependency_score (st: Proof.state) : int =
   let
     val ctxt = Proof.context_of st
@@ -49,15 +49,40 @@ fun calculate_length_score (st: Proof.state) : int =
     length_of_proof
   end;
 
+val empty_dict = Symtab.empty: (int Symtab.table)
 
-(*dummy*)
+fun count_freqs [] dict = dict
+  | count_freqs (x::xs) dict = 
+    let 
+      val count = case Symtab.lookup dict (Int.toString x) of
+                    NONE => 0
+                  | SOME n => n
+      val updated_dict = Symtab.update (Int.toString x, count + 1) dict
+    in
+      count_freqs xs updated_dict
+    end
+
+fun build_mapping dict =
+  let
+    val items = Symtab.dest dict
+    val sorted_items = sort (fn ((_, a: int), (_, b)) => Int.compare(a, b)) items
+    val mapping = map_index (fn (i, (x, _)) => (x, Int.toString i)) sorted_items
+  in
+    Symtab.make mapping
+  end
+
+fun compress_list mapping lst =
+  map (fn x => the (Symtab.lookup mapping (Int.toString x)) |> Int.fromString |> the) lst
+
+
 fun compress_ints (ints: int list) : int list =
   let
-    val str = String.implode (map Char.chr ints)
-    val compressed_str = String.map (fn ch => if Char.isSpace ch then Char.chr 0 else ch) str
+    val freq_dict = count_freqs ints empty_dict
+    val mapping = build_mapping freq_dict
+    val compressed = compress_list mapping ints
   in
-    map Char.ord (String.explode compressed_str)
-  end;
+    compressed
+  end
 
 fun calculate_entropy_score (st: Proof.state) : int =
   let
@@ -125,7 +150,7 @@ structure ProofImproveScorer : PROOF_IMPROVE_SCORER =
 struct             
   fun score st =
     let
-      (* Convert int to real for calculations *)
+
       val length_score = real (normalize (calculate_length_score st, max_length))
       val lemma_score = real (normalize (count_lemmas st, max_lemma))
       val entropy_score = real (normalize (calculate_entropy_score st, max_entropy))
