@@ -17,7 +17,7 @@ struct
       ("", {run = run, finalize = K ""})
     end
 
-  val () = Mirabelle.register_action "try0" make_action
+  val () = Mirabelle.register_action "proof_improve" make_action
 end;
 ```
 HOL/Mirabelle.thy
