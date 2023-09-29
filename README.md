@@ -1,7 +1,7 @@
 # proof_improve
 
-
-mirabelle_proof_improve.ML
+HOL/Tools/Mirabelle/mirabelle_proof_improve.ML
+```ML
 structure Mirabelle_Proof_Improve: MIRABELLE_ACTION =
 struct
   open Proof_Improve
@@ -18,11 +18,11 @@ struct
     end
 
   val () = Mirabelle.register_action "try0" make_action
-
 end;
+```
+HOL/Mirabelle.thy
 
-
-Mirabelle.thy
+```isabelle
 theory Mirabelle
   imports Sledgehammer Predicate_Compile Presburger
 begin
@@ -47,4 +47,4 @@ ML_file ‹Tools/Proof_Improve/proof_improve_scorer.ML›
 ML_file ‹Tools/Proof_Improve/proof_improve_rewriter.ML›
 ML_file ‹Tools/Proof_Improve/proof_improve.ML›
 ML_file ‹Tools/Mirabelle/mirabelle_proof_improve.ML›
-end
+```
