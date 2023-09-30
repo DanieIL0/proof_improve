@@ -1,11 +1,10 @@
 open Term
 open Thm
 
-val weight_length = 0.2
-val weight_lemma = 0.3
+val weight_length = 0.25
+val weight_lemma = 0.4
 val weight_entropy = 0.05
 val weight_dependency = 0.15
-val weight_time = 0.15
 val weight_symbol_to_text_ratio = 0.05
 val weight_branching_factor = 0.1
 
@@ -13,10 +12,8 @@ val max_length = 80000
 val max_lemma = 70
 val max_entropy = 70000
 val max_dependency = 100
-val max_time = 60 
 val max_branching_factor = 55
 (*test entire score for complex lemma - vs simple lemma*)
-(*not linear scale for ranking - check slegdehammer*)
 fun calculate_dependency_score (st: Proof.state) : int =
   let
     val ctxt = Proof.context_of st
@@ -133,12 +130,24 @@ fun calculate_branching_factor (st: Proof.state) : int =
   end;
 
 
-fun calculate_time_score (st: Proof.state) : int = 1 
-(*TODO*)
+fun ln_taylor_series (x: real) (n: int) =
+  if n = 0 then x
+  else
+    let
+      val term = if n mod 2 = 0 then ~ (Math.pow (x, 2.0 * real n - 1.0)) else Math.pow (x, 2.0 * real n - 1.0)
+    in
+      term / (real (2 * n - 1)) + ln_taylor_series x (n - 1)
+    end
 
-fun normalize (value: int, max_value: int) : int =
-  if value >= max_value then 100
-  else (value * 100) div max_value
+fun log_normalize (value: int, max_value: int) : int =
+  if value <= 0 then 0
+  else
+    let
+      val log_value = ln_taylor_series (real (value + 1)) 10
+      val log_max_value = ln_taylor_series (real (max_value + 1)) 10
+    in
+      Real.round (100.0 * (log_value / log_max_value))
+    end
 
 
 signature PROOF_IMPROVE_SCORER =
@@ -148,27 +157,25 @@ end;
 
 structure ProofImproveScorer : PROOF_IMPROVE_SCORER =
 struct             
-  fun score st =
-    let
+fun score st =
+  let
+    val length_score = real (log_normalize (calculate_length_score st, max_length))
+    val lemma_score = real (log_normalize (count_lemmas st, max_lemma))
+    val entropy_score = real (log_normalize (calculate_entropy_score st, max_entropy))
+    val dependency_score = real (log_normalize (calculate_dependency_score st, max_dependency))
+    val symbol_to_text_ratio_score = real (calculate_symbol_to_text_ratio st)  (* Already normalized *)
+    val branching_factor_score = real (log_normalize (calculate_branching_factor st, max_branching_factor))
 
-      val length_score = real (normalize (calculate_length_score st, max_length))
-      val lemma_score = real (normalize (count_lemmas st, max_lemma))
-      val entropy_score = real (normalize (calculate_entropy_score st, max_entropy))
-      val dependency_score = real (normalize (calculate_dependency_score st, max_dependency))
-      val time_score = real (normalize (calculate_time_score st, max_time))
-      val symbol_to_text_ratio_score = real (calculate_symbol_to_text_ratio st)  (* Already normalized *)
-      val branching_factor_score = real (normalize (calculate_branching_factor st, max_branching_factor))
+    val weighted_sum = (length_score * weight_length) + (lemma_score * weight_lemma) + 
+                       (entropy_score * weight_entropy) + (dependency_score * weight_dependency) + 
+                       (symbol_to_text_ratio_score * weight_symbol_to_text_ratio) + 
+                       (branching_factor_score * weight_branching_factor)
 
-      val weighted_sum = (length_score * weight_length) + (lemma_score * weight_lemma) + 
-                         (entropy_score * weight_entropy) + (dependency_score * weight_dependency) + 
-                         (time_score * weight_time) + (symbol_to_text_ratio_score * weight_symbol_to_text_ratio) + 
-                         (branching_factor_score * weight_branching_factor)
+    val total_weight = weight_length + weight_lemma + weight_entropy + weight_dependency + 
+                        weight_symbol_to_text_ratio + weight_branching_factor
 
-      val total_weight = weight_length + weight_lemma + weight_entropy + weight_dependency + 
-                         weight_time + weight_symbol_to_text_ratio + weight_branching_factor
-
-      val normalized_score = weighted_sum * 100.0 / total_weight
-    in
-      Real.round normalized_score
-    end;
+    val normalized_score = weighted_sum * 100.0 / total_weight
+  in
+    Real.round normalized_score
+  end;
 end;
