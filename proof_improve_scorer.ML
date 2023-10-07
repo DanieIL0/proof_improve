@@ -95,7 +95,7 @@ fun calculate_entropy_score (st: Proof.state) : int =
   end;
 
 
-(*check wether included in entropy*)
+(*check weather included in entropy*)
 fun calculate_symbol_to_text_ratio (st: Proof.state) : int =
   let
     val {goal, ...} = Proof.simple_goal st

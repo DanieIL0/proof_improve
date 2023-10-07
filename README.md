@@ -23,6 +23,13 @@ end;
 HOL/Mirabelle.thy
 
 ```isabelle
+(*  Title:      HOL/Mirabelle.thy
+    Author:     Jasmin Blanchette, TU Munich
+    Author:     Sascha Boehme, TU Munich
+    Author:     Makarius
+    Author:     Martin Desharnais, UniBw Munich, MPI-INF Saarbrücken
+*)
+
 theory Mirabelle
   imports Sledgehammer Predicate_Compile Presburger
 begin
@@ -45,6 +52,9 @@ ML_file ‹Tools/Mirabelle/mirabelle_sledgehammer.ML›
 ML_file ‹Tools/Mirabelle/mirabelle_try0.ML›
 ML_file ‹Tools/Proof_Improve/proof_improve_scorer.ML›
 ML_file ‹Tools/Proof_Improve/proof_improve_rewriter.ML›
+ML_file ‹Tools/Proof_Improve/proof_improve_verifier.ML›
+(*ML_file ‹Tools/Proof_Improve/proof_improve_config_manager.ML›*)
 ML_file ‹Tools/Proof_Improve/proof_improve.ML›
 ML_file ‹Tools/Mirabelle/mirabelle_proof_improve.ML›
+end
 ```
