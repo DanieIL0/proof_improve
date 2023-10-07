@@ -50,10 +50,10 @@ ML_file ‹Tools/Mirabelle/mirabelle_quickcheck.ML›
 ML_file ‹Tools/Mirabelle/mirabelle_sledgehammer_filter.ML›
 ML_file ‹Tools/Mirabelle/mirabelle_sledgehammer.ML›
 ML_file ‹Tools/Mirabelle/mirabelle_try0.ML›
+ML_file ‹Tools/Proof_Improve/proof_improve_config_manager.ML›
 ML_file ‹Tools/Proof_Improve/proof_improve_scorer.ML›
 ML_file ‹Tools/Proof_Improve/proof_improve_rewriter.ML›
 ML_file ‹Tools/Proof_Improve/proof_improve_verifier.ML›
-(*ML_file ‹Tools/Proof_Improve/proof_improve_config_manager.ML›*)
 ML_file ‹Tools/Proof_Improve/proof_improve.ML›
 ML_file ‹Tools/Mirabelle/mirabelle_proof_improve.ML›
 end

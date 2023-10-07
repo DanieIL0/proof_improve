@@ -17,7 +17,7 @@ sig
 end;
 
 structure Proof_Improve : PROOF_IMPROVE =
-struct   
+struct
   open ProofImproveScorer
   open ProofImproveRewriter
   open ProofImproveVerifier

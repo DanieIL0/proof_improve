@@ -1,24 +1,12 @@
 open Term
 open Thm
+open ProofImproveConfigManager
 
-val weight_length = 0.25
-val weight_lemma = 0.4
-val weight_entropy = 0.05
-val weight_dependency = 0.15
-val weight_symbol_to_text_ratio = 0.05
-val weight_branching_factor = 0.1
-
-val max_length = 80000
-val max_lemma = 70
-val max_entropy = 70000
-val max_dependency = 100
-val max_branching_factor = 55
-(*test entire score for complex lemma - vs simple lemma*)
 fun calculate_dependency_score (st: Proof.state) : int =
   let
     val ctxt = Proof.context_of st
     val thms = Proof.the_facts st
-    fun is_external_thm thm = 
+    fun is_external_thm thm =
       (case try (Proof_Context.get_fact ctxt) (Facts.named (Thm.get_name_hint thm)) of
          NONE => true
        | SOME _ => false)
@@ -49,8 +37,8 @@ fun calculate_length_score (st: Proof.state) : int =
 val empty_dict = Symtab.empty: (int Symtab.table)
 
 fun count_freqs [] dict = dict
-  | count_freqs (x::xs) dict = 
-    let 
+  | count_freqs (x::xs) dict =
+    let
       val count = case Symtab.lookup dict (Int.toString x) of
                     NONE => 0
                   | SOME n => n
@@ -71,7 +59,6 @@ fun build_mapping dict =
 fun compress_list mapping lst =
   map (fn x => the (Symtab.lookup mapping (Int.toString x)) |> Int.fromString |> the) lst
 
-
 fun compress_ints (ints: int list) : int list =
   let
     val freq_dict = count_freqs ints empty_dict
@@ -86,7 +73,6 @@ fun calculate_entropy_score (st: Proof.state) : int =
     val {goal, ...} = Proof.simple_goal st
     val goal_term = Thm.prop_of goal
     val proof_str = Syntax.string_of_term_global (Proof.theory_of st) goal_term
-
     val ints = map Char.ord (String.explode proof_str)
     val compressed_ints = compress_ints ints
     val entropy_score = length compressed_ints
@@ -94,41 +80,34 @@ fun calculate_entropy_score (st: Proof.state) : int =
     entropy_score
   end;
 
-
-(*check weather included in entropy*)
 fun calculate_symbol_to_text_ratio (st: Proof.state) : int =
   let
     val {goal, ...} = Proof.simple_goal st
     val goal_term = Thm.prop_of goal
     val proof_str = Syntax.string_of_term_global (Proof.theory_of st) goal_term
-
     val total_chars = String.size proof_str
     fun count_symbols (str, acc) =
       if String.size str = 0 then acc
       else
-        let 
+        let
           val ch = String.sub (str, 0)
         in
           count_symbols (String.extract (str, 1, NONE), if Char.isAlphaNum ch then acc else acc + 1)
         end
-
     val symbol_count = count_symbols (proof_str, 0)
     val text_count = total_chars - symbol_count
   in
     if text_count = 0 then 0 else symbol_count * 100 div text_count
   end;
 
-
 fun calculate_branching_factor (st: Proof.state) : int =
   let
     val {goal, ...} = Proof.simple_goal st
     val branches = map Thm.prems_of [goal]  (* Wrapping goal in list as we have a single goal *)
-
     val flat_branches = List.concat branches
   in
     length flat_branches
   end;
-
 
 fun ln_taylor_series (x: real) (n: int) =
   if n = 0 then x
@@ -149,29 +128,41 @@ fun log_normalize (value: int, max_value: int) : int =
       Real.round (100.0 * (log_value / log_max_value))
     end
 
-
 signature PROOF_IMPROVE_SCORER =
 sig
   val score : Proof.state -> int
 end;
 
 structure ProofImproveScorer : PROOF_IMPROVE_SCORER =
-struct             
+struct
 fun score st =
   let
+    val weight_length = get_weight_length ()
+    val weight_lemma = get_weight_lemma ()
+    val weight_entropy = get_weight_entropy ()
+    val weight_dependency = get_weight_dependency ()
+    val weight_symbol_to_text_ratio = get_weight_symbol_to_text_ratio ()
+    val weight_branching_factor = get_weight_branching_factor ()
+
+    val max_length = get_max_length ()
+    val max_lemma = get_max_lemma ()
+    val max_entropy = get_max_entropy ()
+    val max_dependency = get_max_dependency ()
+    val max_branching_factor = get_max_branching_factor ()
+
     val length_score = real (log_normalize (calculate_length_score st, max_length))
     val lemma_score = real (log_normalize (count_lemmas st, max_lemma))
     val entropy_score = real (log_normalize (calculate_entropy_score st, max_entropy))
     val dependency_score = real (log_normalize (calculate_dependency_score st, max_dependency))
-    val symbol_to_text_ratio_score = real (calculate_symbol_to_text_ratio st)  (* Already normalized *)
+    val symbol_to_text_ratio_score = real (calculate_symbol_to_text_ratio st)
     val branching_factor_score = real (log_normalize (calculate_branching_factor st, max_branching_factor))
 
-    val weighted_sum = (length_score * weight_length) + (lemma_score * weight_lemma) + 
-                       (entropy_score * weight_entropy) + (dependency_score * weight_dependency) + 
-                       (symbol_to_text_ratio_score * weight_symbol_to_text_ratio) + 
+    val weighted_sum = (length_score * weight_length) + (lemma_score * weight_lemma) +
+                       (entropy_score * weight_entropy) + (dependency_score * weight_dependency) +
+                       (symbol_to_text_ratio_score * weight_symbol_to_text_ratio) +
                        (branching_factor_score * weight_branching_factor)
 
-    val total_weight = weight_length + weight_lemma + weight_entropy + weight_dependency + 
+    val total_weight = weight_length + weight_lemma + weight_entropy + weight_dependency +
                         weight_symbol_to_text_ratio + weight_branching_factor
 
     val normalized_score = weighted_sum * 100.0 / total_weight
