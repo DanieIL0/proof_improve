@@ -11,6 +11,7 @@ sig
               | ResourcesOut
               | Unknown
               | None
+              | ScoreNotLowered
 
   val string_of_outcome : outcome -> string
   val proof_improve : Time.time option -> Proof.state ->  outcome
@@ -27,6 +28,7 @@ struct
               | ResourcesOut
               | Unknown
               | None
+              | ScoreNotLowered
 
   val default_timeout = seconds 20.0;
 
@@ -35,18 +37,27 @@ struct
     | string_of_outcome ResourcesOut = "resources_out"
     | string_of_outcome Unknown = "unknown"
     | string_of_outcome None = "none"
+    | string_of_outcome ScoreNotLowered = "score_not_lowered"
 
-  fun proof_improve timeout_opt st =
+fun proof_improve timeout_opt st =
     let
-      val internal_score = score st
-      val _ = tracing ("Scorer result: " ^ Int.toString internal_score)
+      val original_score = score st
+      val _ = tracing ("Scorer result (original): " ^ Int.toString original_score)
       val rewrite_result = rewrite st
     in
-      case (internal_score, rewrite_result) of
-        (0, NONE) => None
-      | _ =>
-        if verify st (the rewrite_result)
-        then Rewrite_Succeeded rewrite_result
-        else Unknown
+      case rewrite_result of
+        NONE =>
+          (tracing "Rewrite result: None"; None)
+      | SOME rewritten_st =>
+        let
+          val rewritten_score = score rewritten_st
+          val _ = tracing ("Scorer result (rewritten): " ^ Int.toString rewritten_score)
+        in
+          if rewritten_score < original_score andalso verify st rewritten_st
+          then (tracing "Outcome: Rewrite_Succeeded"; Rewrite_Succeeded rewrite_result)
+          else if rewritten_score >= original_score
+          then (tracing "Outcome: ScoreNotLowered"; ScoreNotLowered)
+          else (tracing "Outcome: Unknown"; Unknown)
+        end
     end;
 end;
