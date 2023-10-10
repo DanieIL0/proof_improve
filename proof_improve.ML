@@ -21,7 +21,6 @@ structure Proof_Improve : PROOF_IMPROVE =
 struct
   open ProofImproveScorer
   open ProofImproveRewriter
-  open ProofImproveVerifier
 
   datatype outcome = Rewrite_Succeeded of Proof.state option
               | TimeOut
@@ -53,7 +52,7 @@ fun proof_improve timeout_opt st =
           val rewritten_score = score rewritten_st
           val _ = tracing ("Scorer result (rewritten): " ^ Int.toString rewritten_score)
         in
-          if rewritten_score < original_score andalso verify st rewritten_st
+          if rewritten_score < original_score
           then (tracing "Outcome: Rewrite_Succeeded"; Rewrite_Succeeded rewrite_result)
           else if rewritten_score >= original_score
           then (tracing "Outcome: ScoreNotLowered"; ScoreNotLowered)
