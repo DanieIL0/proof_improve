@@ -40,7 +40,7 @@ struct
   fun proof_improve timeout_opt st =
     let
       val original_score = score st
-      val _ = tracing ("Scorer result (original): " ^ Int.toString original_score)
+      val _ = tracing ("Scorer result (original): " ^ Real.toString original_score)
       val potential_rewrite = find st
     in
       case potential_rewrite of
@@ -49,7 +49,7 @@ struct
       | SOME potential_rewrite_st =>
         let
           val rewritten_score = score potential_rewrite_st
-          val _ = tracing ("Scorer result (rewritten): " ^ Int.toString rewritten_score)
+          val _ = tracing ("Scorer result (rewritten): " ^ Real.toString rewritten_score)
         in
           if rewritten_score < original_score
           then (tracing "Outcome: Rewrite_Succeeded"; Rewrite_Succeeded (SOME potential_rewrite_st))

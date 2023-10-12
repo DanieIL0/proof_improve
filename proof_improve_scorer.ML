@@ -103,7 +103,7 @@ fun calculate_symbol_to_text_ratio (st: Proof.state) : int =
 fun calculate_branching_factor (st: Proof.state) : int =
   let
     val {goal, ...} = Proof.simple_goal st
-    val branches = map Thm.prems_of [goal]  (* Wrapping goal in list as we have a single goal *)
+    val branches = map Thm.prems_of [goal]
     val flat_branches = List.concat branches
   in
     length flat_branches
@@ -124,13 +124,14 @@ fun log_normalize (value: int, max_value: int) : int =
     let
       val log_value = ln_taylor_series (real (value + 1)) 10
       val log_max_value = ln_taylor_series (real (max_value + 1)) 10
+      val result = Real.round (100.0 * (log_value / log_max_value))
     in
-      Real.round (100.0 * (log_value / log_max_value))
+      if result > 100 then 100 else result
     end
 
 signature PROOF_IMPROVE_SCORER =
 sig
-  val score : Proof.state -> int
+  val score : Proof.state -> real
 end;
 
 structure ProofImproveScorer : PROOF_IMPROVE_SCORER =
@@ -167,6 +168,6 @@ fun score st =
 
     val normalized_score = weighted_sum  / total_weight
   in
-    Real.round normalized_score
+    normalized_score
   end;
 end;
