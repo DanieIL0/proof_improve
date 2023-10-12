@@ -20,7 +20,7 @@ struct
   val () = Mirabelle.register_action "proof_improve" make_action
 end;
 ```
-HOL/Mirabelle.thy
+HOL/Mirabelle.thy **(HAS TO BE READONLY) - ELSE HOL WILL NOT BUILD**
 
 ```isabelle
 (*  Title:      HOL/Mirabelle.thy
