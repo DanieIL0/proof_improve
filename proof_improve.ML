@@ -3,7 +3,6 @@
 
 This module provides utilities for improving Isabelle proofs.
 *)
-
 signature PROOF_IMPROVE =
 sig
   datatype outcome = Rewrite_Succeeded of Proof.state option
@@ -14,13 +13,13 @@ sig
               | ScoreNotLowered
 
   val string_of_outcome : outcome -> string
-  val proof_improve : Time.time option -> Proof.state ->  outcome
+  val proof_improve : Time.time option -> Proof.state -> outcome
 end;
 
 structure Proof_Improve : PROOF_IMPROVE =
 struct
   open ProofImproveScorer
-  open ProofImproveRewriter
+  open ProofImproveFinder
 
   datatype outcome = Rewrite_Succeeded of Proof.state option
               | TimeOut
@@ -38,22 +37,22 @@ struct
     | string_of_outcome None = "none"
     | string_of_outcome ScoreNotLowered = "score_not_lowered"
 
-fun proof_improve timeout_opt st =
+  fun proof_improve timeout_opt st =
     let
       val original_score = score st
       val _ = tracing ("Scorer result (original): " ^ Int.toString original_score)
-      val rewrite_result = rewrite st
+      val potential_rewrite = find st
     in
-      case rewrite_result of
+      case potential_rewrite of
         NONE =>
-          (tracing "Rewrite result: None"; None)
-      | SOME rewritten_st =>
+          (tracing "No potential rewrite found"; None)
+      | SOME potential_rewrite_st =>
         let
-          val rewritten_score = score rewritten_st
+          val rewritten_score = score potential_rewrite_st
           val _ = tracing ("Scorer result (rewritten): " ^ Int.toString rewritten_score)
         in
           if rewritten_score < original_score
-          then (tracing "Outcome: Rewrite_Succeeded"; Rewrite_Succeeded rewrite_result)
+          then (tracing "Outcome: Rewrite_Succeeded"; Rewrite_Succeeded (SOME potential_rewrite_st))
           else if rewritten_score >= original_score
           then (tracing "Outcome: ScoreNotLowered"; ScoreNotLowered)
           else (tracing "Outcome: Unknown"; Unknown)

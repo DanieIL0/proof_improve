@@ -1,14 +1,14 @@
-signature PROOF_IMPROVE_REWRITER =
+signature PROOF_IMPROVE_FINDER =
 sig
-  val rewrite: Proof.state -> Proof.state option
+  val find: Proof.state -> Proof.state option
 end;
 
-structure ProofImproveRewriter: PROOF_IMPROVE_REWRITER =
+structure ProofImproveFinder: PROOF_IMPROVE_FINDER =
 struct
   open Sledgehammer
   open Sledgehammer_Prover
-  
-  fun rewrite (st: Proof.state) =
+
+  fun find (st: Proof.state) =
     let
       val params = {
         abduce = NONE,
