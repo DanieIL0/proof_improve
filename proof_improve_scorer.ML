@@ -165,7 +165,7 @@ fun score st =
     val total_weight = weight_length + weight_lemma + weight_entropy + weight_dependency +
                         weight_symbol_to_text_ratio + weight_branching_factor
 
-    val normalized_score = weighted_sum * 100.0 / total_weight
+    val normalized_score = weighted_sum  / total_weight
   in
     Real.round normalized_score
   end;
