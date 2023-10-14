@@ -12,9 +12,13 @@ fun calculate_dependency_score (st: Proof.state) : int =
        | SOME _ => false)
     val external_thms_count = length (filter is_external_thm thms)
     val facts_count = length thms
+    val _ = tracing ("External theorems count: " ^ Int.toString external_thms_count)
+    val _ = tracing ("Total facts count: " ^ Int.toString facts_count)
+    val _ = tracing ("Theorems: " ^ commas (map Thm.get_name_hint thms))
   in
     external_thms_count + facts_count
   end;
+
 
 fun count_lemmas (st: Proof.state) : int =
   let
@@ -80,7 +84,7 @@ fun calculate_entropy_score (st: Proof.state) : int =
     entropy_score
   end;
 
-fun calculate_symbol_to_text_ratio (st: Proof.state) : int =
+fun calculate_symbol_to_text_ratio (st: Proof.state) : real =
   let
     val {goal, ...} = Proof.simple_goal st
     val goal_term = Thm.prop_of goal
@@ -97,8 +101,9 @@ fun calculate_symbol_to_text_ratio (st: Proof.state) : int =
     val symbol_count = count_symbols (proof_str, 0)
     val text_count = total_chars - symbol_count
   in
-    if text_count = 0 then 0 else symbol_count * 100 div text_count
+    if text_count = 0 then 0.0 else real (symbol_count * 100 div text_count)
   end;
+
 
 fun calculate_branching_factor (st: Proof.state) : int =
   let
@@ -109,7 +114,7 @@ fun calculate_branching_factor (st: Proof.state) : int =
     length flat_branches
   end;
 
-fun ln_taylor_series (x: real) (n: int) =
+fun ln_taylor_series (x: real) (n: int) : real =
   if n = 0 then x
   else
     let
@@ -118,16 +123,33 @@ fun ln_taylor_series (x: real) (n: int) =
       term / (real (2 * n - 1)) + ln_taylor_series x (n - 1)
     end
 
-fun log_normalize (value: int, max_value: int) : int =
-  if value <= 0 then 0
+fun log_normalize (value: int, max_value: int) : real =
+  if value <= 0 then 0.0
   else
     let
       val log_value = ln_taylor_series (real (value + 1)) 10
       val log_max_value = ln_taylor_series (real (max_value + 1)) 10
-      val result = Real.round (100.0 * (log_value / log_max_value))
+      val result = 100.0 * (log_value / log_max_value)
     in
-      if result > 100 then 100 else result
+      if result > 100.0 then 100.0 else result
     end
+
+fun linear_normalize (value: int, max_value: int) : real =
+  if value <= 0 then 0.0
+  else if max_value <= 0 then 0.0
+  else
+    let
+      val result = 100.0 * (real value / real max_value)
+    in
+      if result > 100.0 then 100.0 else result
+    end;
+
+fun normalize_score (mode: string, value: int, max_value: int) : real =
+  case mode of
+      "log" => log_normalize (value, max_value)
+    | "linear" => linear_normalize (value, max_value)
+    | _ => 0.0;
+
 
 signature PROOF_IMPROVE_SCORER =
 sig
@@ -138,6 +160,8 @@ structure Proof_Improve_Scorer : PROOF_IMPROVE_SCORER =
 struct
 fun score st =
   let
+    val normalize_mode = get_normalize_mode ()
+
     val weight_length = get_weight_length ()
     val weight_lemma = get_weight_lemma ()
     val weight_entropy = get_weight_entropy ()
@@ -151,22 +175,22 @@ fun score st =
     val max_dependency = get_max_dependency ()
     val max_branching_factor = get_max_branching_factor ()
 
-    val length_score = real (log_normalize (calculate_length_score st, max_length))
+    val length_score = normalize_score (normalize_mode, calculate_length_score st, max_length)
     val _ = tracing ("Length score: " ^ Real.toString length_score)
 
-    val lemma_score = real (log_normalize (count_lemmas st, max_lemma))
+    val lemma_score = normalize_score (normalize_mode, count_lemmas st, max_lemma)
     val _ = tracing ("Lemma score: " ^ Real.toString lemma_score)
 
-    val entropy_score = real (log_normalize (calculate_entropy_score st, max_entropy))
+    val entropy_score = normalize_score (normalize_mode, calculate_entropy_score st, max_entropy)
     val _ = tracing ("Entropy score: " ^ Real.toString entropy_score)
 
-    val dependency_score = real (log_normalize (calculate_dependency_score st, max_dependency))
+    val dependency_score = normalize_score (normalize_mode, calculate_dependency_score st, max_dependency)
     val _ = tracing ("Dependency score: " ^ Real.toString dependency_score)
 
-    val symbol_to_text_ratio_score = real (calculate_symbol_to_text_ratio st)
+    val symbol_to_text_ratio_score = calculate_symbol_to_text_ratio st
     val _ = tracing ("Symbol to text ratio score: " ^ Real.toString symbol_to_text_ratio_score)
 
-    val branching_factor_score = real (log_normalize (calculate_branching_factor st, max_branching_factor))
+    val branching_factor_score = normalize_score (normalize_mode, calculate_branching_factor st, max_branching_factor)
     val _ = tracing ("Branching factor score: " ^ Real.toString branching_factor_score)
 
     val weighted_sum = (length_score * weight_length) + (lemma_score * weight_lemma) +
