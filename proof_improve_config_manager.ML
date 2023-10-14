@@ -15,7 +15,7 @@ sig
   val get_max_branching_factor : unit -> int
 end;
 
-structure ProofImproveConfigManager : PROOF_IMPROVE_CONFIG_MANAGER =
+structure Proof_Improve_Config_Manager : PROOF_IMPROVE_CONFIG_MANAGER =
 struct
   datatype config = Config of {
     weight_length : real,

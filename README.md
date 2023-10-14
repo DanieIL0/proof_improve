@@ -2,6 +2,12 @@
 
 HOL/Tools/Mirabelle/mirabelle_proof_improve.ML
 ```ML
+(*  Title:      HOL/Tools/Mirabelle/mirabelle_proof_improve.ML
+    Author:     Daniel Lipkin, TU Muenchen
+
+Mirabelle action: "proof_improve".
+*)
+
 structure Mirabelle_Proof_Improve: MIRABELLE_ACTION =
 struct
   open Proof_Improve
@@ -31,7 +37,7 @@ HOL/Mirabelle.thy **(HAS TO BE READONLY) - ELSE HOL WILL NOT BUILD**
 *)
 
 theory Mirabelle
-  imports Sledgehammer Predicate_Compile Presburger
+  imports Sledgehammer Predicate_Compile Presburger Proof_Improve
 begin
 
 ML_file ‹Tools/Mirabelle/mirabelle_util.ML›
@@ -50,10 +56,26 @@ ML_file ‹Tools/Mirabelle/mirabelle_quickcheck.ML›
 ML_file ‹Tools/Mirabelle/mirabelle_sledgehammer_filter.ML›
 ML_file ‹Tools/Mirabelle/mirabelle_sledgehammer.ML›
 ML_file ‹Tools/Mirabelle/mirabelle_try0.ML›
+ML_file ‹Tools/Mirabelle/mirabelle_proof_improve.ML›
+end
+```
+
+HOL/Proof_Improve.thy
+```isabelle
+(*  Title:      HOL/Proof_Improve.thy
+    Author:     Daniel Lipkin, TU Muenchen
+*)
+
+section ‹Proof Improve: Automatic Proof Improvement›
+
+theory Proof_Improve
+  imports Sledgehammer
+begin
+
 ML_file ‹Tools/Proof_Improve/proof_improve_config_manager.ML›
 ML_file ‹Tools/Proof_Improve/proof_improve_scorer.ML›
 ML_file ‹Tools/Proof_Improve/proof_improve_finder.ML›
 ML_file ‹Tools/Proof_Improve/proof_improve.ML›
-ML_file ‹Tools/Mirabelle/mirabelle_proof_improve.ML›
+
 end
 ```

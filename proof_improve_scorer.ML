@@ -1,6 +1,6 @@
 open Term
 open Thm
-open ProofImproveConfigManager
+open Proof_Improve_Config_Manager
 
 fun calculate_dependency_score (st: Proof.state) : int =
   let
@@ -134,7 +134,7 @@ sig
   val score : Proof.state -> real
 end;
 
-structure ProofImproveScorer : PROOF_IMPROVE_SCORER =
+structure Proof_Improve_Scorer : PROOF_IMPROVE_SCORER =
 struct
 fun score st =
   let
@@ -152,11 +152,22 @@ fun score st =
     val max_branching_factor = get_max_branching_factor ()
 
     val length_score = real (log_normalize (calculate_length_score st, max_length))
+    val _ = tracing ("Length score: " ^ Real.toString length_score)
+
     val lemma_score = real (log_normalize (count_lemmas st, max_lemma))
+    val _ = tracing ("Lemma score: " ^ Real.toString lemma_score)
+
     val entropy_score = real (log_normalize (calculate_entropy_score st, max_entropy))
+    val _ = tracing ("Entropy score: " ^ Real.toString entropy_score)
+
     val dependency_score = real (log_normalize (calculate_dependency_score st, max_dependency))
+    val _ = tracing ("Dependency score: " ^ Real.toString dependency_score)
+
     val symbol_to_text_ratio_score = real (calculate_symbol_to_text_ratio st)
+    val _ = tracing ("Symbol to text ratio score: " ^ Real.toString symbol_to_text_ratio_score)
+
     val branching_factor_score = real (log_normalize (calculate_branching_factor st, max_branching_factor))
+    val _ = tracing ("Branching factor score: " ^ Real.toString branching_factor_score)
 
     val weighted_sum = (length_score * weight_length) + (lemma_score * weight_lemma) +
                        (entropy_score * weight_entropy) + (dependency_score * weight_dependency) +

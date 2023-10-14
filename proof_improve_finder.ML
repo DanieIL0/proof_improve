@@ -3,7 +3,7 @@ sig
   val find: Proof.state -> Proof.state option
 end;
 
-structure ProofImproveFinder: PROOF_IMPROVE_FINDER =
+structure Proof_Improve_Finder: PROOF_IMPROVE_FINDER =
 struct
   open Sledgehammer
   open Sledgehammer_Prover
@@ -40,7 +40,7 @@ struct
         uncurried_aliases = NONE,
         verbose = false
       }
-      
+
       val mode = Normal
       val fact_override = {add = [], del = [], only = false}
       val (_, (outcome, _)) = Sledgehammer.run_sledgehammer params mode NONE 30 fact_override st

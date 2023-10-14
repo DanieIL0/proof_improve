@@ -18,8 +18,8 @@ end;
 
 structure Proof_Improve : PROOF_IMPROVE =
 struct
-  open ProofImproveScorer
-  open ProofImproveFinder
+  open Proof_Improve_Scorer
+  open Proof_Improve_Finder
 
   datatype outcome = Rewrite_Succeeded of Proof.state option
               | TimeOut
