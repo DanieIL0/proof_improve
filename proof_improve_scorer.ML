@@ -2,24 +2,6 @@ open Term
 open Thm
 open Proof_Improve_Config_Manager
 
-fun calculate_dependency_score (st: Proof.state) : int =
-  let
-    val ctxt = Proof.context_of st
-    val thms = Proof.the_facts st
-    fun is_external_thm thm =
-      (case try (Proof_Context.get_fact ctxt) (Facts.named (Thm.get_name_hint thm)) of
-         NONE => true
-       | SOME _ => false)
-    val external_thms_count = length (filter is_external_thm thms)
-    val facts_count = length thms
-    val _ = tracing ("External theorems count: " ^ Int.toString external_thms_count)
-    val _ = tracing ("Total facts count: " ^ Int.toString facts_count)
-    val _ = tracing ("Theorems: " ^ commas (map Thm.get_name_hint thms))
-  in
-    external_thms_count + facts_count
-  end;
-
-
 fun count_lemmas (st: Proof.state) : int =
   let
     val {goal, ...} = Proof.simple_goal st
@@ -30,10 +12,14 @@ fun count_lemmas (st: Proof.state) : int =
 
 fun calculate_length_score (st: Proof.state) : int =
   let
-    val {goal, ...} = Proof.simple_goal st
+    val {context, goal, ...} = Proof.simple_goal st
     val goal_term = Thm.prop_of goal
     val goal_str = Syntax.string_of_term_global (Proof.theory_of st) goal_term
-    val length_of_proof = String.size goal_str
+
+    val keywords = Thy_Header.get_keywords' context
+    val tokens = Token.explode keywords Position.start goal_str
+    val logical_tokens = List.filter (fn tok => not (Token.is_space tok) andalso not (Token.is_comment tok)) tokens
+    val length_of_proof = List.length logical_tokens
   in
     length_of_proof
   end;
@@ -74,15 +60,38 @@ fun compress_ints (ints: int list) : int list =
 
 fun calculate_entropy_score (st: Proof.state) : int =
   let
-    val {goal, ...} = Proof.simple_goal st
+    val {context, goal, ...} = Proof.simple_goal st
     val goal_term = Thm.prop_of goal
     val proof_str = Syntax.string_of_term_global (Proof.theory_of st) goal_term
-    val ints = map Char.ord (String.explode proof_str)
-    val compressed_ints = compress_ints ints
-    val entropy_score = length compressed_ints
+
+    val keywords = Thy_Header.get_keywords' context
+    val tokens = Token.explode keywords Position.start proof_str
+
+    fun count_freqs [] dict = dict
+      | count_freqs (token::toks) dict =
+        let
+          val key = Token.content_of token
+          val count = case Symtab.lookup dict key of
+                        NONE => 0
+                      | SOME n => n
+          val updated_dict = Symtab.update (key, count + 1) dict
+        in
+          count_freqs toks updated_dict
+        end
+
+    val freq_dict = count_freqs tokens empty_dict
+    val total_tokens = fold (fn (_, cnt) => fn acc => acc + cnt) (Symtab.dest freq_dict) 0
+    val entropy_score =
+      fold (fn (_, cnt) => fn acc =>
+        let
+          val probability = Real.fromInt cnt / Real.fromInt total_tokens
+        in
+          acc - (probability * Math.ln probability)
+        end) (Symtab.dest freq_dict) 0.0
   in
-    entropy_score
+    Real.round entropy_score
   end;
+
 
 fun calculate_symbol_to_text_ratio (st: Proof.state) : real =
   let
@@ -114,21 +123,12 @@ fun calculate_branching_factor (st: Proof.state) : int =
     length flat_branches
   end;
 
-fun ln_taylor_series (x: real) (n: int) : real =
-  if n = 0 then x
-  else
-    let
-      val term = if n mod 2 = 0 then ~ (Math.pow (x, 2.0 * real n - 1.0)) else Math.pow (x, 2.0 * real n - 1.0)
-    in
-      term / (real (2 * n - 1)) + ln_taylor_series x (n - 1)
-    end
-
 fun log_normalize (value: int, max_value: int) : real =
   if value <= 0 then 0.0
   else
     let
-      val log_value = ln_taylor_series (real (value + 1)) 10
-      val log_max_value = ln_taylor_series (real (max_value + 1)) 10
+      val log_value = Math.ln (real (value + 1))
+      val log_max_value = Math.ln (real (max_value + 1))
       val result = 100.0 * (log_value / log_max_value)
     in
       if result > 100.0 then 100.0 else result
@@ -148,13 +148,21 @@ fun normalize_score (mode: string, value: int, max_value: int) : real =
   case mode of
       "log" => log_normalize (value, max_value)
     | "linear" => linear_normalize (value, max_value)
-    | _ => 0.0;
-
+    | _ => (tracing ("Error: Invalid normalization mode: " ^ mode); 0.0);
 
 signature PROOF_IMPROVE_SCORER =
 sig
   val score : Proof.state -> real
 end;
+
+
+
+(*
+val calcLengthScore = @{scala_function "Prooftextextractor.calculateLengthScore"}
+val calcEntropyScore = @{scala_function "Prooftextextractor.calculateEntropyScore"}
+val lengthScore = @{scala "Prooftextextractor.calculateLengthScore"} proofText
+val entropyScore = @{scala "Prooftextextractor.calculateEntropyScore"} proofText
+ does not work? - check antiquotation*)
 
 structure Proof_Improve_Scorer : PROOF_IMPROVE_SCORER =
 struct
@@ -184,9 +192,6 @@ fun score st =
     val entropy_score = normalize_score (normalize_mode, calculate_entropy_score st, max_entropy)
     val _ = tracing ("Entropy score: " ^ Real.toString entropy_score)
 
-    val dependency_score = normalize_score (normalize_mode, calculate_dependency_score st, max_dependency)
-    val _ = tracing ("Dependency score: " ^ Real.toString dependency_score)
-
     val symbol_to_text_ratio_score = calculate_symbol_to_text_ratio st
     val _ = tracing ("Symbol to text ratio score: " ^ Real.toString symbol_to_text_ratio_score)
 
@@ -194,7 +199,7 @@ fun score st =
     val _ = tracing ("Branching factor score: " ^ Real.toString branching_factor_score)
 
     val weighted_sum = (length_score * weight_length) + (lemma_score * weight_lemma) +
-                       (entropy_score * weight_entropy) + (dependency_score * weight_dependency) +
+                       (entropy_score * weight_entropy) +
                        (symbol_to_text_ratio_score * weight_symbol_to_text_ratio) +
                        (branching_factor_score * weight_branching_factor)
 

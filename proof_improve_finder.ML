@@ -28,25 +28,56 @@ struct
         max_proofs = 1,
         minimize = true,
         overlord = false,
-        preplay_timeout = Time.zeroTime,
+        preplay_timeout = Time.fromSeconds 30,
         provers = ["e"],
         slices = 1,
         smt_proofs = false,
         spy = false,
         strict = false,
-        timeout = Time.zeroTime,
+        timeout = Time.fromSeconds 30,
         try0 = false,
         type_enc = NONE,
         uncurried_aliases = NONE,
         verbose = false
       }
 
-      val mode = Normal
-      val fact_override = {add = [], del = [], only = false}
-      val (_, (outcome, _)) = Sledgehammer.run_sledgehammer params mode NONE 30 fact_override st
-    in
-      case outcome of
-          SH_Some _ => SOME st
-        | _ => NONE
-    end
-end;
+    val mode = Normal
+    val fact_override = {add = [], del = [], only = false}
+    val (_, (outcome, _)) = Sledgehammer.run_sledgehammer params mode NONE 30 fact_override st
+    fun analyze_preplay_results (preplay_results: preplay_result list) =
+
+      let
+        val unfolded_results = map (fn (method, (play_outcome, stature_list)) =>
+          let
+        val (scope, status) = case stature_list of
+        (s, stat)::_ => (s, stat)
+          in
+            { method = method,
+              play_outcome = play_outcome,
+              scope = scope,
+              status = status }
+          end
+        ) preplay_results
+
+        val best_method = st
+      in
+        best_method
+      end
+
+    fun generate_rewritten_proof (best_method) = SOME st
+
+  in
+    case outcome of
+      SH_Some (prover_result, preplay_results) =>
+        (case prover_result of
+          Success =>
+            let
+              val best_method = analyze_preplay_results preplay_results
+              val rewritten_proof = generate_rewritten_proof best_method
+            in
+               rewritten_proof
+            end
+        | _ => SOME st)
+    | _ => SOME st
+  end
+end

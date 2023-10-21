@@ -41,9 +41,9 @@ struct
     weight_symbol_to_text_ratio = 0.05,
     weight_branching_factor = 0.1,
 
-    max_length = 150000,
+    max_length = 100000,
     max_lemma = 10,
-    max_entropy = 130000,
+    max_entropy = 10000,
     max_dependency = 25,
     max_branching_factor = 4,
     normalize_mode = "linear" (*can be log/linear*)
