@@ -13,7 +13,7 @@ sig
               | ScoreNotLowered
 
   val string_of_outcome : outcome -> string
-  val proof_improve : Time.time option -> Proof.state -> outcome
+  val proof_improve : Time.time option -> Proof.state -> Command_Span.span -> outcome
 end;
 
 structure Proof_Improve : PROOF_IMPROVE =
@@ -37,9 +37,9 @@ struct
     | string_of_outcome None = "none"
     | string_of_outcome ScoreNotLowered = "score_not_lowered"
 
-  fun proof_improve timeout_opt st =
+  fun proof_improve timeout_opt st sp =
     let
-      val original_score = score st
+      val original_score = score st sp
       val _ = tracing ("Scorer result (original): " ^ Real.toString original_score)
       val potential_rewrite = find st
     in
@@ -48,7 +48,7 @@ struct
           (tracing "No potential rewrite found"; None)
       | SOME potential_rewrite_st =>
         let
-          val rewritten_score = score potential_rewrite_st
+          val rewritten_score = score potential_rewrite_st sp
           val _ = tracing ("Scorer result (rewritten): " ^ Real.toString rewritten_score)
         in
           if rewritten_score < original_score

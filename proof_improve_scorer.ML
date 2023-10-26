@@ -1,6 +1,14 @@
 open Term
 open Thm
 open Proof_Improve_Config_Manager
+open Command_Span
+open Token
+
+signature PROOF_IMPROVE_SCORER =
+sig
+  val score :  Proof.state -> span -> real
+end;
+
 
 fun count_lemmas (st: Proof.state) : int =
   let
@@ -10,19 +18,13 @@ fun count_lemmas (st: Proof.state) : int =
     lemma_count
   end;
 
-fun calculate_length_score (st: Proof.state) : int =
+fun calculate_length_score (sp: Command_Span.span) : int =
   let
-    val {context, goal, ...} = Proof.simple_goal st
-    val goal_term = Thm.prop_of goal
-    val goal_str = Syntax.string_of_term_global (Proof.theory_of st) goal_term
-
-    val keywords = Thy_Header.get_keywords' context
-    val tokens = Token.explode keywords Position.start goal_str
-    val logical_tokens = List.filter (fn tok => not (Token.is_space tok) andalso not (Token.is_comment tok)) tokens
-    val length_of_proof = List.length logical_tokens
+    val tokens = Command_Span.content sp
+    val non_comment_tokens = List.filter (fn tok => not (Token.is_comment tok)) tokens
   in
-    length_of_proof
-  end;
+    List.foldl (fn (tok, acc) => acc + String.size (Token.content_of tok)) 0 non_comment_tokens
+  end
 
 val empty_dict = Symtab.empty: (int Symtab.table)
 
@@ -58,14 +60,10 @@ fun compress_ints (ints: int list) : int list =
     compressed
   end
 
-fun calculate_entropy_score (st: Proof.state) : int =
+fun calculate_entropy_score (sp: span) : int =
   let
-    val {context, goal, ...} = Proof.simple_goal st
-    val goal_term = Thm.prop_of goal
-    val proof_str = Syntax.string_of_term_global (Proof.theory_of st) goal_term
-
-    val keywords = Thy_Header.get_keywords' context
-    val tokens = Token.explode keywords Position.start proof_str
+    val tokens = Command_Span.content sp
+    val non_comment_tokens = List.filter (fn tok => not (Token.is_comment tok)) tokens
 
     fun count_freqs [] dict = dict
       | count_freqs (token::toks) dict =
@@ -79,7 +77,7 @@ fun calculate_entropy_score (st: Proof.state) : int =
           count_freqs toks updated_dict
         end
 
-    val freq_dict = count_freqs tokens empty_dict
+    val freq_dict = count_freqs non_comment_tokens empty_dict
     val total_tokens = fold (fn (_, cnt) => fn acc => acc + cnt) (Symtab.dest freq_dict) 0
     val entropy_score =
       fold (fn (_, cnt) => fn acc =>
@@ -93,35 +91,37 @@ fun calculate_entropy_score (st: Proof.state) : int =
   end;
 
 
-fun calculate_symbol_to_text_ratio (st: Proof.state) : real =
+fun calculate_symbol_to_text_ratio (sp: Command_Span.span) : real =
   let
-    val {goal, ...} = Proof.simple_goal st
-    val goal_term = Thm.prop_of goal
-    val proof_str = Syntax.string_of_term_global (Proof.theory_of st) goal_term
-    val total_chars = String.size proof_str
-    fun count_symbols (str, acc) =
-      if String.size str = 0 then acc
-      else
-        let
-          val ch = String.sub (str, 0)
-        in
-          count_symbols (String.extract (str, 1, NONE), if Char.isAlphaNum ch then acc else acc + 1)
-        end
-    val symbol_count = count_symbols (proof_str, 0)
+    val tokens = Command_Span.content sp
+    val non_comment_tokens = List.filter (fn tok => not (Token.is_comment tok)) tokens
+
+    val total_chars =
+      List.foldl (fn (tok, acc) => acc + String.size (Token.content_of tok)) 0 non_comment_tokens
+
+    fun count_symbols str =
+      let
+        fun aux (i, len, acc) =
+          if i = len then acc
+          else
+            let
+              val ch = String.sub (str, i)
+            in
+              aux (i + 1, len, if Char.isAlphaNum ch then acc else acc + 1)
+            end
+      in
+        aux (0, String.size str, 0)
+      end
+
+    val symbol_count =
+      List.foldl (fn (tok, acc) => acc + count_symbols (Token.content_of tok)) 0 non_comment_tokens
+
     val text_count = total_chars - symbol_count
   in
     if text_count = 0 then 0.0 else real (symbol_count * 100 div text_count)
   end;
 
 
-fun calculate_branching_factor (st: Proof.state) : int =
-  let
-    val {goal, ...} = Proof.simple_goal st
-    val branches = map Thm.prems_of [goal]
-    val flat_branches = List.concat branches
-  in
-    length flat_branches
-  end;
 
 fun log_normalize (value: int, max_value: int) : real =
   if value <= 0 then 0.0
@@ -150,61 +150,39 @@ fun normalize_score (mode: string, value: int, max_value: int) : real =
     | "linear" => linear_normalize (value, max_value)
     | _ => (tracing ("Error: Invalid normalization mode: " ^ mode); 0.0);
 
-signature PROOF_IMPROVE_SCORER =
-sig
-  val score : Proof.state -> real
-end;
-
-
-
-(*
-val calcLengthScore = @{scala_function "Prooftextextractor.calculateLengthScore"}
-val calcEntropyScore = @{scala_function "Prooftextextractor.calculateEntropyScore"}
-val lengthScore = @{scala "Prooftextextractor.calculateLengthScore"} proofText
-val entropyScore = @{scala "Prooftextextractor.calculateEntropyScore"} proofText
- does not work? - check antiquotation*)
 
 structure Proof_Improve_Scorer : PROOF_IMPROVE_SCORER =
 struct
-fun score st =
+fun score st sp =
   let
     val normalize_mode = get_normalize_mode ()
 
     val weight_length = get_weight_length ()
     val weight_lemma = get_weight_lemma ()
     val weight_entropy = get_weight_entropy ()
-    val weight_dependency = get_weight_dependency ()
     val weight_symbol_to_text_ratio = get_weight_symbol_to_text_ratio ()
-    val weight_branching_factor = get_weight_branching_factor ()
 
     val max_length = get_max_length ()
     val max_lemma = get_max_lemma ()
     val max_entropy = get_max_entropy ()
-    val max_dependency = get_max_dependency ()
-    val max_branching_factor = get_max_branching_factor ()
 
-    val length_score = normalize_score (normalize_mode, calculate_length_score st, max_length)
+    val length_score = normalize_score (normalize_mode, calculate_length_score sp, max_length)
     val _ = tracing ("Length score: " ^ Real.toString length_score)
 
     val lemma_score = normalize_score (normalize_mode, count_lemmas st, max_lemma)
     val _ = tracing ("Lemma score: " ^ Real.toString lemma_score)
 
-    val entropy_score = normalize_score (normalize_mode, calculate_entropy_score st, max_entropy)
+    val entropy_score = normalize_score (normalize_mode, calculate_entropy_score sp, max_entropy)
     val _ = tracing ("Entropy score: " ^ Real.toString entropy_score)
 
-    val symbol_to_text_ratio_score = calculate_symbol_to_text_ratio st
+    val symbol_to_text_ratio_score = calculate_symbol_to_text_ratio sp
     val _ = tracing ("Symbol to text ratio score: " ^ Real.toString symbol_to_text_ratio_score)
-
-    val branching_factor_score = normalize_score (normalize_mode, calculate_branching_factor st, max_branching_factor)
-    val _ = tracing ("Branching factor score: " ^ Real.toString branching_factor_score)
 
     val weighted_sum = (length_score * weight_length) + (lemma_score * weight_lemma) +
                        (entropy_score * weight_entropy) +
-                       (symbol_to_text_ratio_score * weight_symbol_to_text_ratio) +
-                       (branching_factor_score * weight_branching_factor)
+                       (symbol_to_text_ratio_score * weight_symbol_to_text_ratio)
 
-    val total_weight = weight_length + weight_lemma + weight_entropy + weight_dependency +
-                        weight_symbol_to_text_ratio + weight_branching_factor
+    val total_weight = weight_length + weight_lemma + weight_entropy +  weight_symbol_to_text_ratio
 
     val normalized_score = weighted_sum  / total_weight
   in
