@@ -1,38 +1,56 @@
-open Term
-open Thm
 open Proof_Improve_Config_Manager
-open Command_Span
-open Token
 
 signature PROOF_IMPROVE_SCORER =
 sig
-  val score :  Proof.state -> span -> real
+  val score :  Proof.state -> Command_Span.span -> real
 end;
 
+fun get_content (sp: Command_Span.span) : string =
+  let
+    val tokens = Command_Span.content sp
+    val non_comment_tokens = List.filter (fn tok => not (Token.is_comment tok)) tokens
 
-fun count_lemmas (st: Proof.state) : int =
+    fun traverse (toks, current_depth, acc) =
+      case toks of
+          [] => acc
+        | tok::rest =>
+            let
+              val token_str = Token.content_of tok
+              val updated_acc =
+                if acc = "" orelse String.isSuffix " " acc orelse String.isPrefix " " token_str then
+                  acc ^ token_str
+                else
+                  acc ^ " " ^ token_str
+              val new_depth =
+                if Token.is_command tok andalso token_str = "proof" then
+                  current_depth + 1
+                else if Token.is_command tok andalso token_str = "qed" then
+                  current_depth - 1
+                else
+                  current_depth
+            in
+              if new_depth = 0 then updated_acc
+              else traverse (rest, new_depth, updated_acc)
+            end
+
+  in
+    traverse (non_comment_tokens, 0, "")
+  end;
+
+fun count_lemmas (st: Proof.state) : real =
   let
     val {goal, ...} = Proof.simple_goal st
     val lemma_count = length (Thm.prems_of goal)
   in
-    lemma_count
+    Real.fromInt lemma_count
   end;
 
-fun calculate_length_score (sp: Command_Span.span) : int =
+fun calculate_length_score (sp: Command_Span.span) : real =
   let
-    val tokens = Command_Span.content sp
-    val non_comment_tokens = List.filter (fn tok => not (Token.is_comment tok)) tokens
-    val is_end_keyword = Token.keyword_with (fn s => s = "by" orelse s = "done" orelse s = "qed")
-
-    fun count_length (tok, acc) =
-      if is_end_keyword tok then
-        acc
-      else
-        acc + String.size (Token.content_of tok)
-
+    val content_str = get_content sp
   in
-    List.foldl count_length 0 non_comment_tokens
-  end
+    Real.fromInt (String.size content_str)
+  end;
 
 val empty_dict = Symtab.empty: (int Symtab.table)
 
@@ -68,72 +86,42 @@ fun compress_ints (ints: int list) : int list =
     compressed
   end
 
-fun calculate_entropy_score (sp: Command_Span.span) : int =
+fun calculate_entropy_score (sp: Command_Span.span) : real =
   let
-    val tokens = Command_Span.content sp
-    val non_comment_tokens = List.filter (fn tok => not (Token.is_comment tok)) tokens
-    val is_end_keyword = Token.keyword_with (fn s => s = "by" orelse s = "done" orelse s = "qed")
+    val content_str = get_content sp
+    val total_chars = size content_str
 
-    fun count_freqs [] dict = dict
-      | count_freqs (token::toks) dict =
-        if is_end_keyword token then
-          dict
-        else
-          let
-            val key = Token.content_of token
-            val count = case Symtab.lookup dict key of
-                          NONE => 0
-                        | SOME n => n
-            val updated_dict = Symtab.update (key, count + 1) dict
-          in
-            count_freqs toks updated_dict
-          end
+    fun count_char c = List.foldl (fn (ch, acc) => if ch = c then acc + 1 else acc) 0 (String.explode content_str)
+    fun freq c = (Real.fromInt (count_char c)) / (Real.fromInt total_chars)
+    fun entropy c = let val p = freq c in p * Math.ln p / Math.ln 2.0 end
 
-    val freq_dict = count_freqs non_comment_tokens Symtab.empty
-    val total_tokens = fold (fn (_, cnt) => fn acc => acc + cnt) (Symtab.dest freq_dict) 0
-    val entropy_score =
-      fold (fn (_, cnt) => fn acc =>
-        let
-          val probability = Real.fromInt cnt / Real.fromInt total_tokens
-        in
-          acc - (probability * Math.ln probability)
-        end) (Symtab.dest freq_dict) 0.0
+    fun dedup_sorted_list xs =
+      case xs of
+          [] => []
+        | [x] => [x]
+        | x::y::ys => if x = y then dedup_sorted_list (y::ys) else x :: dedup_sorted_list (y::ys)
+
+    val chars_list = String.explode content_str
+                      |> sort Char.compare
+                      |> dedup_sorted_list
+
   in
-    Real.round entropy_score
-  end
+    if total_chars = 0 then 0.0
+    else ~1.0 * (List.foldl (fn (c, acc) => acc + entropy c) 0.0 chars_list)
+  end;
 
 fun calculate_symbol_to_text_ratio (sp: Command_Span.span) : real =
   let
-    val tokens = Command_Span.content sp
-    val non_comment_tokens = List.filter (fn tok => not (Token.is_comment tok)) tokens
-
-    val total_chars =
-      List.foldl (fn (tok, acc) => acc + String.size (Token.content_of tok)) 0 non_comment_tokens
-
-    fun count_symbols str =
-      let
-        fun aux (i, len, acc) =
-          if i = len then acc
-          else
-            let
-              val ch = String.sub (str, i)
-            in
-              aux (i + 1, len, if Char.isAlphaNum ch then acc else acc + 1)
-            end
-      in
-        aux (0, String.size str, 0)
-      end
-
-    val symbol_count =
-      List.foldl (fn (tok, acc) => acc + count_symbols (Token.content_of tok)) 0 non_comment_tokens
-
-    val text_count = total_chars - symbol_count
+    val content_str = get_content sp
+    val total_chars = size content_str
+    val symbols_count = List.foldl (fn (ch, acc) =>
+                      if Char.isAlpha ch then acc else acc + 1) 0 (String.explode content_str)
   in
-    if text_count = 0 then 0.0 else Real.fromInt symbol_count / Real.fromInt text_count
-  end
+    if total_chars = 0 then 0.0
+    else (Real.fromInt symbols_count / Real.fromInt total_chars) * 100.0
+  end;
 
-
-fun calculate_depth (sp: Command_Span.span) : int =
+fun calculate_depth (sp: Command_Span.span) : real =
   let
     val tokens = Command_Span.content sp
 
@@ -147,33 +135,32 @@ fun calculate_depth (sp: Command_Span.span) : int =
               depth_aux (rest, current_depth - 1, max_depth)
             else
               depth_aux (rest, current_depth, max_depth)
-
   in
-    depth_aux (tokens, 0, 0)
+   Real.fromInt (depth_aux (tokens, 0, 0))
   end;
 
-fun log_normalize (value: int, max_value: int) : real =
-  if value <= 0 then 0.0
+fun log_normalize (value: real, max_value: real) : real =
+  if value <= 0.0 then 0.0
   else
     let
-      val log_value = Math.ln (real (value + 1))
-      val log_max_value = Math.ln (real (max_value + 1))
+      val log_value = Math.ln (value + 1.0)
+      val log_max_value = Math.ln (max_value + 1.0)
       val result = 100.0 * (log_value / log_max_value)
     in
       if result > 100.0 then 100.0 else result
     end
 
-fun linear_normalize (value: int, max_value: int) : real =
-  if value <= 0 then 0.0
-  else if max_value <= 0 then 0.0
+fun linear_normalize (value: real, max_value: real) : real =
+  if value <= 0.0 then 0.0
+  else if max_value <= 0.0 then 0.0
   else
     let
-      val result = 100.0 * (real value / real max_value)
+      val result = 100.0 * (value /  max_value)
     in
       if result > 100.0 then 100.0 else result
     end;
 
-fun normalize_score (mode: string, value: int, max_value: int) : real =
+fun normalize_score (mode: string, value: real, max_value: real) : real =
   case mode of
       "log" => log_normalize (value, max_value)
     | "linear" => linear_normalize (value, max_value)
