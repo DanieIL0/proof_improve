@@ -2,14 +2,13 @@ open Proof_Improve_Config_Manager
 
 signature PROOF_IMPROVE_SCORER =
 sig
-  val score :  Proof.state -> Command_Span.span -> real
+  val score :  Proof.state -> Command_Span.span -> real * string
 end;
 
 fun get_content (sp: Command_Span.span) : string =
   let
     val tokens = Command_Span.content sp
     val non_comment_tokens = List.filter (fn tok => not (Token.is_comment tok)) tokens
-
     fun traverse (toks, current_depth, acc) =
       case toks of
           [] => acc
@@ -184,29 +183,32 @@ fun score st sp =
     val max_depth  = get_max_depth ()
 
     val length_score = normalize_score (normalize_mode, calculate_length_score sp, max_length)
-    val _ = tracing ("Length score: " ^ Real.toString length_score)
+    val length_report = "Length score: " ^ Real.toString length_score ^ "\n"
 
     val lemma_score = normalize_score (normalize_mode, count_lemmas st, max_lemma)
-    val _ = tracing ("Lemma score: " ^ Real.toString lemma_score)
+    val lemma_report = "Lemma score: " ^ Real.toString lemma_score ^ "\n"
 
     val entropy_score = normalize_score (normalize_mode, calculate_entropy_score sp, max_entropy)
-    val _ = tracing ("Entropy score: " ^ Real.toString entropy_score)
+    val entropy_report = "Entropy score: " ^ Real.toString entropy_score ^ "\n"
 
     val symbol_to_text_ratio_score = calculate_symbol_to_text_ratio sp
-    val _ = tracing ("Symbol to text ratio score: " ^ Real.toString symbol_to_text_ratio_score)
+    val symbol_to_text_ratio_report = "Symbol to text ratio score: " ^ Real.toString symbol_to_text_ratio_score ^ "\n"
 
     val depth_score = normalize_score (normalize_mode, calculate_depth sp, max_depth)
-    val _ = tracing ("Proof depth score: " ^ Real.toString depth_score)
+    val depth_report = "Proof depth score: " ^ Real.toString depth_score ^ "\n"
 
     val weighted_sum = (length_score * weight_length) + (lemma_score * weight_lemma) +
                        (entropy_score * weight_entropy) + (depth_score * weight_depth) +
                        (symbol_to_text_ratio_score * weight_symbol_to_text_ratio)
 
     val total_weight = weight_length + weight_lemma + weight_entropy +
-    weight_symbol_to_text_ratio + weight_depth
+                       weight_symbol_to_text_ratio + weight_depth
 
-    val normalized_score = weighted_sum  / total_weight
+    val normalized_score = weighted_sum / total_weight
+
+    val full_report = length_report ^ lemma_report ^ entropy_report ^
+                      symbol_to_text_ratio_report ^ depth_report
   in
-    normalized_score
+    (normalized_score, full_report)
   end;
-end;
+end
