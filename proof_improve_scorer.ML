@@ -2,10 +2,10 @@ open Proof_Improve_Config_Manager
 
 signature PROOF_IMPROVE_SCORER =
 sig
-  val score :  Proof.state -> Command_Span.span -> real * string
+  val score :  Proof.state -> Command_Span.span list -> real * string
 end;
 
-fun get_content (sp: Command_Span.span) : string =
+fun get_content (sp: Command_Span.span list) : string =
   let
     val tokens = Command_Span.content sp
     val non_comment_tokens = List.filter (fn tok => not (Token.is_comment tok)) tokens

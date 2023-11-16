@@ -50,7 +50,7 @@ sig
     {index: int, label: string, name: string, arguments: Properties.T, timeout: Time.time,
      output_dir: Path.T}
   type command =
-    {theory_index: int, name: string, pos: Position.T, pre: Proof.state, post: Toplevel.state, span : Command_Span.span}
+    {theory_index: int, name: string, pos: Position.T, pre: Proof.state, post: Toplevel.state, spans: Command_Span.span list}
   type action = {run: command -> string, finalize: unit -> string}
   val register_action: string -> (action_context -> string * action) -> unit
 
@@ -101,7 +101,7 @@ fun read_actions str =
 (* actions *)
 
 type command =
-  {theory_index: int, name: string, pos: Position.T, pre: Proof.state, post: Toplevel.state, span: Command_Span.span};
+  {theory_index: int, name: string, pos: Position.T, pre: Proof.state, post: Toplevel.state, spans: Command_Span.span list};
 type action_context =
   {index: int, label: string, name: string, arguments: Properties.T, timeout: Time.time,
    output_dir: Path.T};
@@ -227,9 +227,53 @@ fun check_theories strs =
 
 val whitelist = ["apply", "by", "proof", "unfolding", "using"];
 
+val whitelist2 = [
+  "apply", "by", "proof", "qed", "sorry", "done", "oops", "defer", "prefer", "apply_end", "subgoal",
+  "theorem", "lemma", "corollary", "proposition", "schematic_goal", "notepad",
+  "have", "hence", "show", "thus", "then", "from", "with", "note", "supply",
+  "using", "unfolding", "fix", "assume", "presume", "define", "consider", "obtain",
+  "let", "case",
+  "{", "}", "next", "also", "moreover", "finally", "ultimately", "back",
+  "assumes", "defines", "fixes", "includes", "notes", "shows", "where",
+  "type_synonym", "definition", "abbreviation", "lemmas",
+  "end"
+];
+
+fun concat_tokens (toks, acc) =
+      case toks of
+          [] => acc
+        | tok::rest =>
+            let
+              val token_str = Token.content_of tok
+              val updated_acc =
+                if acc = "" orelse String.isSuffix " " acc orelse String.isPrefix " " token_str then
+                  acc ^ token_str
+                else
+                  acc ^ " " ^ token_str
+            in
+              concat_tokens (rest, updated_acc)
+            end
+
+fun print (loaded_theories: (theory * Document_Output.segment list) list) = 
+  let
+    val all_segments = List.concat (List.map #2 loaded_theories)
+    val all_spans1 = List.map (fn {span, ...} => span) all_segments
+    val tokens1 = List.concat (List.map Command_Span.content all_spans1)
+    val string1 = concat_tokens (tokens1, "")
+    val export_name = Path.binding0 (Path.basic "mirabelle" + Path.basic "print2_output")
+  in
+    if string1 <> "" then
+      Export.export \<^theory> export_name [XML.Text string1]
+    else
+      ()
+  end
+
+
+
 val _ =
   Build.add_hook (fn qualifier => fn loaded_theories =>
-    let
+    let                                  
+      val _ = print loaded_theories
       val mirabelle_actions = Options.default_string \<^system_option>‹mirabelle_actions›;
       val actions =
         (case read_actions mirabelle_actions of
@@ -252,24 +296,27 @@ val _ =
           fun make_commands (thy_index, (thy, segments)) =
             let
               val thy_long_name = Context.theory_long_name thy;
-              val check_thy = check_theory thy_long_name;
-              fun make_command {command = tr, prev_state = st, state = st', span = span, ...} =
+              val _ = check_theory thy_long_name;
+              fun make_command span_acc (command, spans) =
                 let
+                  val {command = tr, prev_state = st, state = st', span, ...} = command;
                   val name = Toplevel.name_of tr;
                   val pos = Toplevel.pos_of tr;
-                  
+                  val updated_span_acc = span :: span_acc;
                 in
                   if Context.proper_subthy (\<^theory>, thy) andalso
                     can (Proof.assert_backward o Toplevel.proof_of) st andalso
-                    member (op =) whitelist name andalso check_thy pos
-                  then SOME {theory_index = thy_index, name = name, pos = pos,
-                    pre = Toplevel.proof_of st, post = st', span = span}
-                  else NONE
-                end;
+                    member (op =) whitelist2 name
+                  then
+                    {theory_index = thy_index, name = name, pos = pos,
+                     pre = Toplevel.proof_of st, post = st', spans = updated_span_acc} :: spans
+                  else
+                    spans
+                end
             in
               if Resources.theory_qualifier thy_long_name = qualifier then
-                map_filter make_command segments
-              else
+                List.foldl (make_command []) [] segments
+              else             
                 []
             end;
 
@@ -323,6 +370,7 @@ val _ =
           List.app (uncurry finalize_action) contexts
         end
     end);
+
 
 (* Mirabelle utility functions *)
 
