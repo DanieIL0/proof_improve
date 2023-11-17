@@ -53,6 +53,8 @@ sig
     {theory_index: int, name: string, pos: Position.T, pre: Proof.state, post: Toplevel.state, spans: Command_Span.span list}
   type action = {run: command -> string, finalize: unit -> string}
   val register_action: string -> (action_context -> string * action) -> unit
+  type state_spans_map = string Symtab.table;
+  val state_spans : state_spans_map Synchronized.var
 
   (*utility functions*)
   val print_exn: exn -> string
@@ -224,22 +226,32 @@ fun check_theories strs =
 
 
 (* presentation hook *)
+(* presentation hook *)
 
 val whitelist = ["apply", "by", "proof", "unfolding", "using"];
 
-val whitelist2 = [
-  "apply", "by", "proof", "qed", "sorry", "done", "oops", "defer", "prefer", "apply_end", "subgoal",
-  "theorem", "lemma", "corollary", "proposition", "schematic_goal", "notepad",
-  "have", "hence", "show", "thus", "then", "from", "with", "note", "supply",
-  "using", "unfolding", "fix", "assume", "presume", "define", "consider", "obtain",
-  "let", "case",
-  "{", "}", "next", "also", "moreover", "finally", "ultimately", "back",
-  "assumes", "defines", "fixes", "includes", "notes", "shows", "where",
-  "type_synonym", "definition", "abbreviation", "lemmas",
-  "end"
-];
 
-fun concat_tokens (toks, acc) =
+fun calculate_depth (spans: Command_Span.span list): int =
+  let
+    val tokens = List.concat (List.map Command_Span.content spans)
+    fun depth_aux (toks, current_depth) =
+      case toks of
+          [] => current_depth
+        | tok::rest =>
+            if Token.is_command tok then
+              (case Token.content_of tok of
+                 "proof" => depth_aux (rest, current_depth + 1)
+               | "qed" => depth_aux (rest, current_depth - 1)
+               | "done" => depth_aux (rest, current_depth - 1)
+               | _ => depth_aux (rest, current_depth))
+            else
+              depth_aux (rest, current_depth)
+  in
+    depth_aux (tokens, 0)
+  end;
+
+
+fun concat_tokens (toks: Token.T list, acc: string): string =
       case toks of
           [] => acc
         | tok::rest =>
@@ -254,31 +266,100 @@ fun concat_tokens (toks, acc) =
               concat_tokens (rest, updated_acc)
             end
 
-fun print (loaded_theories: (theory * Document_Output.segment list) list) = 
+fun span_list_to_string (spans: Command_Span.span list): string = 
   let
-    val all_segments = List.concat (List.map #2 loaded_theories)
-    val all_spans1 = List.map (fn {span, ...} => span) all_segments
-    val tokens1 = List.concat (List.map Command_Span.content all_spans1)
-    val string1 = concat_tokens (tokens1, "")
-    val export_name = Path.binding0 (Path.basic "mirabelle" + Path.basic "print2_output")
+    val tokens = List.concat (List.map Command_Span.content spans)
   in
-    if string1 <> "" then
-      Export.export \<^theory> export_name [XML.Text string1]
+    concat_tokens (tokens, "")
+  end;
+
+
+type state_spans_map = string Symtab.table;
+val state_spans = Synchronized.var "state_spans" (Symtab.empty: state_spans_map);
+
+fun map_to_string (map: state_spans_map): string =
+  let
+    fun aux (key, value) acc = acc ^" key: "^  key ^ " -> value:" ^ value ^ "\n"
+  in
+    List.foldl (fn (kv, acc) => aux kv acc) "" (Symtab.dest map)
+  end;
+
+
+fun take_relevant_spans (spans: Command_Span.span list, initial_depth: int): Command_Span.span list =
+  let
+    fun take_spans (remaining_spans, current_depth, acc) =
+      case remaining_spans of
+        [] => List.rev acc
+      | span::rest =>
+          let
+            val new_depth = calculate_depth [span]
+            val next_depth = current_depth + new_depth
+          in
+            if next_depth = initial_depth then
+              List.rev (span::acc)
+            else
+              take_spans (rest, next_depth, span::acc)
+          end
+  in
+    take_spans (spans, initial_depth, [])
+  end;
+
+
+
+ fun print_map (map: state_spans_map) = 
+  let
+    val map_string = map_to_string map
+    val export_name = Path.binding0 (Path.basic "mirabelle" + Path.basic "map_output")
+  in
+    if map_string <> "" then
+      Export.export \<^theory> export_name [XML.Text map_string]
     else
       ()
+  end;
+
+fun find (pred: 'a -> bool) (lst: 'a list): 'a option =
+  let
+    fun aux [] = NONE
+      | aux (x::xs) = if pred x then SOME x else aux xs
+  in
+    aux lst
+  end;
+
+fun get_first (lst: 'a option list): 'a option =
+  case find is_some lst of
+    NONE => NONE
+  | SOME x => x
+
+
+fun span_equal (span1: Command_Span.span, span2: Command_Span.span): bool =
+  let
+    val content1 = span_list_to_string [span1]
+    val content2 = span_list_to_string [span2]
+  in
+    content1 = content2
   end
 
+
+fun find_starting_span_index (target_span: Command_Span.span, spans: Command_Span.span list): int =
+  let                         
+    fun aux i (span: Command_Span.span) = if span_equal(span, target_span) then SOME i else NONE
+    val indexed_spans = ListPair.zip (spans, 0 upto (length spans - 1))
+  in
+    case get_first (map (fn (s, i) => aux i s) indexed_spans) of
+      NONE => 0
+    | SOME idx => idx
+  end
+;
 
 
 val _ =
   Build.add_hook (fn qualifier => fn loaded_theories =>
-    let                                  
-      val _ = print loaded_theories
+    let                              
       val mirabelle_actions = Options.default_string \<^system_option>‹mirabelle_actions›;
-      val actions =
+      val actions = 
         (case read_actions mirabelle_actions of
-          SOME actions => actions
-        | NONE => error ("Failed to parse mirabelle_actions: " ^ quote mirabelle_actions));
+           SOME actions => actions
+         | NONE => error ("Failed to parse mirabelle_actions: " ^ quote mirabelle_actions));
     in
       if null actions then
         ()
@@ -293,40 +374,50 @@ val _ =
           val mirabelle_output_dir = Options.default_string \<^system_option>‹mirabelle_output_dir›;
           val check_theory = check_theories (space_explode "," mirabelle_theories);
 
-          fun make_commands (thy_index, (thy, segments)) =
-            let
-              val thy_long_name = Context.theory_long_name thy;
-              val _ = check_theory thy_long_name;
-              fun make_command span_acc (command, spans) =
-                let
-                  val {command = tr, prev_state = st, state = st', span, ...} = command;
-                  val name = Toplevel.name_of tr;
-                  val pos = Toplevel.pos_of tr;
-                  val updated_span_acc = span :: span_acc;
-                in
-                  if Context.proper_subthy (\<^theory>, thy) andalso
-                    can (Proof.assert_backward o Toplevel.proof_of) st andalso
-                    member (op =) whitelist2 name
-                  then
-                    {theory_index = thy_index, name = name, pos = pos,
-                     pre = Toplevel.proof_of st, post = st', spans = updated_span_acc} :: spans
-                  else
-                    spans
-                end
-            in
-              if Resources.theory_qualifier thy_long_name = qualifier then
-                List.foldl (make_command []) [] segments
-              else             
-                []
-            end;
+   fun make_commands (thy_index, (thy, segments)) =
+  let
+    val thy_long_name = Context.theory_long_name thy;
+    val _ = check_theory thy_long_name;
+    val all_theory_segments = List.concat (List.map #2 loaded_theories)
+    val all_theory_spans = List.map (fn {span, ...} => span) all_theory_segments
 
+    fun make_command span_acc (command, spans) =
+      let
+        val {command = tr, prev_state = st, state = st', span, ...} = command;
+        val name = Toplevel.name_of tr;
+        val pos = Toplevel.pos_of tr;
+        val updated_span_acc = span :: span_acc;
+        val start_idx = find_starting_span_index (span, all_theory_spans)
+        val relevant_spans_from_theory = List.drop (all_theory_spans, start_idx)
+        val initial_depth = Toplevel.level st'
+        val relevant_spans = take_relevant_spans (relevant_spans_from_theory, initial_depth)
+        val spans_string = span_list_to_string relevant_spans
+      in
+        if Context.proper_subthy (\<^theory>, thy) andalso
+           can (Proof.assert_backward o Toplevel.proof_of) st andalso
+           member (op =) whitelist name
+        then
+          (
+            Synchronized.change state_spans (Symtab.update (Toplevel.string_of_state st, spans_string));
+            {theory_index = thy_index, name = name, pos = pos,
+             pre = Toplevel.proof_of st, post = st', spans = updated_span_acc} :: spans
+          )
+        else
+          spans
+      end
+  in
+    if Resources.theory_qualifier thy_long_name = qualifier then
+      List.foldl (make_command []) [] segments
+    else
+      []
+  end;
           (* initialize actions *)
           val contexts = actions |> map_index (fn (n, (label, name, args)) =>
             let
               val make_action =
                 (case get_action name of
-                  SOME f => f
-                | NONE => error "Unknown action");
+                   SOME f => f
+                 | NONE => error "Unknown action");
               val action_subdir = if label = "" then string_of_int n ^ "." ^ name else label;
               val output_dir =
                 Path.append (Path.explode mirabelle_output_dir) (Path.basic action_subdir);
@@ -336,38 +427,39 @@ val _ =
             in
               (initialize_action make_action context, context)
             end);
-        in
-          (* run actions on all relevant goals *)
-          loaded_theories
-          |> map_index I
-          |> maps make_commands
-          |> (if mirabelle_randomize <= 0 then
-                I
-              else
-                fst o MLCG.shuffle (MLCG.initialize mirabelle_randomize))
-          |> (fn xs => fold_map (fn x => fn i => ((i, x), i + 1)) xs 0)
-          |> (fn (indexed_commands, commands_length) =>
-            let
-              val stride =
-                if mirabelle_stride <= 0 then
-                  Integer.max 1 (commands_length div mirabelle_max_calls)
-                else
-                  mirabelle_stride
-            in
-              maps (fn (n, command) =>
-              let val (m, k) = Integer.div_mod (n + 1) stride in
-                if k = 0 andalso (mirabelle_max_calls <= 0 orelse m <= mirabelle_max_calls) then
-                  map (fn context => (context, command)) contexts
-                else
-                  []
-              end) indexed_commands
-            end)
-          (* Don't use multithreading for a dry run because of the high per-thread overhead. *)
-          |> (if mirabelle_dry_run then map else Par_List.map) (fn ((action, context), command) =>
-              apply_action (if mirabelle_dry_run then dry_run_action else action) context command);
 
+          (* run actions on all relevant goals *)
+          val _ = 
+            loaded_theories
+            |> map_index I
+            |> maps make_commands
+            |> (if mirabelle_randomize <= 0 then
+                  I
+                else
+                  fst o MLCG.shuffle (MLCG.initialize mirabelle_randomize))
+            |> (fn xs => fold_map (fn x => fn i => ((i, x), i + 1)) xs 0)
+            |> (fn (indexed_commands, commands_length) =>
+              let
+                val stride =
+                  if mirabelle_stride <= 0 then
+                    Integer.max 1 (commands_length div mirabelle_max_calls)
+                  else
+                    mirabelle_stride
+              in
+                maps (fn (n, command) =>
+                  let val (m, k) = Integer.div_mod (n + 1) stride in
+                    if k = 0 andalso (mirabelle_max_calls <= 0 orelse m <= mirabelle_max_calls) then
+                      map (fn context => (context, command)) contexts
+                    else
+                      []
+                  end) indexed_commands
+              end)
+            |> (if mirabelle_dry_run then map else Par_List.map) (fn ((action, context), command) =>
+                apply_action (if mirabelle_dry_run then dry_run_action else action) context command);
+            in
           (* finalize actions *)
-          List.app (uncurry finalize_action) contexts
+          List.app (uncurry finalize_action) contexts;
+          print_map (Synchronized.value state_spans)
         end
     end);
 
