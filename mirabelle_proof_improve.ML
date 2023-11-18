@@ -14,11 +14,11 @@ struct
 
   fun make_action ({timeout, ...} : action_context) =
     let
-      val generous_timeout = Time.scale 100.0 timeout
+      val generous_timeout = Time.scale 200.0 timeout
 
       fun run ({pre, spans, ...} : command) : string =
         let
-          val outcome = Timeout.apply generous_timeout (proof_improve (SOME timeout)) pre spans
+          val outcome = Timeout.apply generous_timeout (proof_improve) pre spans
           val outcome_message = case outcome of
               Rewrite_Succeeded (log, _) => "Rewrite Succeeded: " ^ log
             | TimeOut log => "TimeOut: " ^ log
