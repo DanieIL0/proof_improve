@@ -5,14 +5,14 @@ This module provides utilities for improving Isabelle proofs.
 *)
 signature PROOF_IMPROVE =
 sig
-  datatype outcome = Rewrite_Succeeded of string * Proof.state option
+  datatype outcome = Rewrite_Succeeded of string
               | TimeOut of string
               | ResourcesOut of string
               | Unknown of string
               | None of string
               | ScoreNotLowered of string
 
-  val proof_improve : Proof.state -> Command_Span.span list -> outcome
+  val proof_improve : Proof.state -> string -> outcome
 end;
 
 structure Proof_Improve : PROOF_IMPROVE =
@@ -20,51 +20,50 @@ struct
   open Proof_Improve_Scorer
   open Proof_Improve_Finder
 
-   datatype outcome = Rewrite_Succeeded of string * Proof.state option
+   datatype outcome = Rewrite_Succeeded of string
               | TimeOut of string
               | ResourcesOut of string
               | Unknown of string
               | None of string
               | ScoreNotLowered of string
 
-
-fun proof_improve  st sp =
+fun proof_improve st proof_text =
   let
-    val (original_score, original_log) = score st sp
+    val (original_score, original_log) = score (List.length (Proof.the_fact_or_facts st)) proof_text
     val original_score_msg = "Scorer result (original): " ^ Real.toString original_score
-    val potential_rewrite = find st
-    val initial_log = original_log ^ "\n" ^ original_score_msg
+    val find_result = find st
+    val initial_log = original_log  ^ original_score_msg
   in
-    case potential_rewrite of
+    case find_result of
       NONE =>
         let
           val log_msg = initial_log ^ "\nNo potential rewrite found."
         in
-          None log_msg
+          ScoreNotLowered log_msg
         end
-    | SOME potential_rewrite_st =>
+    | SOME (found_facts, found_proof_text, log) =>
       let
-        val (rewritten_score, rewritten_log) = score potential_rewrite_st sp
-        val rewritten_score_msg = "Scorer result (rewritten): " ^ Real.toString rewritten_score
-        val combined_log = initial_log ^ "\n" ^ rewritten_log ^ "\n" ^ rewritten_score_msg
+        val (found_score, found_log) = score found_facts found_proof_text
+        val found_score_msg = "Scorer result (found): " ^ Real.toString found_score
+        val combined_log = initial_log ^ "\n" ^ log ^ "\n" ^ found_log ^  found_score_msg
       in
-        if rewritten_score < original_score
+        if found_score < original_score
         then
           let
-            val outcome_msg = "Outcome: Rewrite_Succeeded"
+            val outcome_msg = "Outcome: Rewrite_Succeeded\n"
           in
-            Rewrite_Succeeded (combined_log ^ "\n" ^ outcome_msg, SOME potential_rewrite_st)
+            Rewrite_Succeeded (combined_log ^ "\n" ^ outcome_msg)
           end
-        else if rewritten_score >= original_score
+        else if found_score >= original_score
         then
           let
-            val outcome_msg = "Outcome: ScoreNotLowered"
+            val outcome_msg = "Outcome: ScoreNotLowered\n"
           in
             ScoreNotLowered (combined_log ^ "\n" ^ outcome_msg)
           end
         else
           let
-            val outcome_msg = "Outcome: Unknown"
+            val outcome_msg = "Outcome: Unknown\n"
           in
             Unknown (combined_log ^ "\n" ^ outcome_msg)
           end
