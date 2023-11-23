@@ -1,3 +1,9 @@
+(*  Title:      HOL/Tools/Proof_Improve/proof_improve_config_manager.ML
+    Author:     Daniel Lipkin, TU Muenchen
+
+Contains all configurations of Proof_Improve
+*)
+
 signature PROOF_IMPROVE_CONFIG_MANAGER =
 sig
   type config

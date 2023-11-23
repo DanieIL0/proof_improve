@@ -1,41 +1,52 @@
 (*  Title:      HOL/Tools/Mirabelle/mirabelle_proof_improve.ML
     Author:     Daniel Lipkin, TU Muenchen
 
-    Mirabelle action: "proof_improve".
+Mirabelle action: "proof_improve".
 *)
 
 structure Mirabelle_Proof_Improve: MIRABELLE_ACTION =
 struct
   open Proof_Improve
-  open Mirabelle
 
+fun get_content spans : string =
+  let
+    val tokens = List.concat (List.map Command_Span.content spans)
+    val non_comment_tokens = List.filter (fn tok => not (Token.is_comment tok)) tokens
+        fun concat_tokens (toks, acc) =
+      case toks of
+          [] => acc
+        | tok::rest =>
+            let
+              val token_str = Token.content_of tok
+              val updated_acc =
+                if acc = "" orelse String.isSuffix " " acc orelse String.isPrefix " " token_str then
+                  acc ^ token_str
+                else
+                  acc ^ " " ^ token_str
+            in
+              concat_tokens (rest, updated_acc)
+            end
 
-  val data = Synchronized.var "Mirabelle_Proof_Improve_data" ""
+  in
+     concat_tokens (non_comment_tokens, "")
+  end;
 
-  fun make_action ({timeout, ...} : action_context) =
+  fun make_action ({timeout, ...} : Mirabelle.action_context) =
     let
       val generous_timeout = Time.scale 200.0 timeout
 
-      fun run ({pre, spans, ...} : command) : string =
+      fun run ({pre, spans, ...} : Mirabelle.command) : string =
         let
-          val outcome = Timeout.apply generous_timeout (proof_improve) pre spans
-          val outcome_message = case outcome of
-              Rewrite_Succeeded (log, _) => "Rewrite Succeeded: " ^ log
-            | TimeOut log => "TimeOut: " ^ log
-            | ResourcesOut log => "ResourcesOut: " ^ log
-            | Unknown log => "Unknown: " ^ log
-            | None log => "None: " ^ log
-            | ScoreNotLowered log => "ScoreNotLowered: " ^ log
-          val () = Synchronized.change data (fn old_str => old_str ^ outcome_message ^ "\n")
+          val outcome = Timeout.apply generous_timeout (proof_improve) pre (get_content spans)
         in
-          outcome_message
+          string_of_outcome outcome ^ "\n"
         end
 
-      fun finalize () : string = ""
+      fun finalize () : string = "End of Proof Improve Call"
     in
 
       ("", {run = run, finalize = finalize})
     end
 
-  val () = register_action "proof_improve" make_action
+  val () = Mirabelle.register_action "proof_improve" make_action
 end;

@@ -1,3 +1,9 @@
+(*  Title:      HOL/Tools/Proof_Improve/proof_improve_scorer.ML
+    Author:     Daniel Lipkin, TU Muenchen
+
+Scores proofs based on cognitive complexity.
+*)
+
 open Proof_Improve_Config_Manager
 
 signature PROOF_IMPROVE_SCORER =
@@ -165,7 +171,7 @@ fun score facts proof_text =
     val max_apply = get_max_apply ()
 
     val length_score = normalize_score_int (normalize_mode, calculate_length_score proof_text, max_length)
-    val length_report = "\nLength score: " ^ Real.toString length_score ^ "\n"
+    val length_report = "Length score: " ^ Real.toString length_score ^ "\n"
 
     val fact_score = normalize_score_int (normalize_mode, facts, max_lemma)
     val fact_report = "Fact score: " ^ Real.toString fact_score ^ "\n"
@@ -194,7 +200,7 @@ fun score facts proof_text =
 
     val full_report = length_report ^ fact_report ^ entropy_report ^
                       symbol_to_text_ratio_report ^ depth_report ^ apply_report
-                      ^ "Span: " ^ proof_text ^ "\n"
+                      ^ "Proof Text: " ^ proof_text ^ "\n"
   in
     (normalized_score, full_report)
   end;

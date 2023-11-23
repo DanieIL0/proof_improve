@@ -53,8 +53,6 @@ sig
     {theory_index: int, name: string, pos: Position.T, pre: Proof.state, post: Toplevel.state, spans: Command_Span.span list}
   type action = {run: command -> string, finalize: unit -> string}
   val register_action: string -> (action_context -> string * action) -> unit
-  type state_spans_map = string Symtab.table;
-  val state_spans : state_spans_map Synchronized.var
 
   (*utility functions*)
   val print_exn: exn -> string
@@ -224,12 +222,9 @@ fun check_theories strs =
     fun check_pos range = check_line range o Position.line_of;
   in check_pos o get_theory end;
 
-
-(* presentation hook *)
 (* presentation hook *)
 
 val whitelist = ["apply", "by", "proof", "unfolding", "using"];
-
 
 fun calculate_depth (spans: Command_Span.span list): int =
   let
@@ -250,7 +245,6 @@ fun calculate_depth (spans: Command_Span.span list): int =
     depth_aux (tokens, 0)
   end;
 
-
 fun concat_tokens (toks: Token.T list, acc: string): string =
       case toks of
           [] => acc
@@ -265,25 +259,6 @@ fun concat_tokens (toks: Token.T list, acc: string): string =
             in
               concat_tokens (rest, updated_acc)
             end
-
-fun span_list_to_string (spans: Command_Span.span list): string = 
-  let
-    val tokens = List.concat (List.map Command_Span.content spans)
-  in
-    concat_tokens (tokens, "")
-  end;
-
-
-type state_spans_map = string Symtab.table;
-val state_spans = Synchronized.var "state_spans" (Symtab.empty: state_spans_map);
-
-fun map_to_string (map: state_spans_map): string =
-  let
-    fun aux (key, value) acc = acc ^" key: "^  key ^ " -> value:" ^ value ^ "\n"
-  in
-    List.foldl (fn (kv, acc) => aux kv acc) "" (Symtab.dest map)
-  end;
-
 
 fun take_relevant_spans (spans: Command_Span.span list, initial_depth: int): Command_Span.span list =
   let
@@ -304,24 +279,11 @@ fun take_relevant_spans (spans: Command_Span.span list, initial_depth: int): Com
     take_spans (spans, initial_depth, [])
   end;
 
-
-
- fun print_map (map: state_spans_map) = 
-  let
-    val map_string = map_to_string map
-    val export_name = Path.binding0 (Path.basic "mirabelle" + Path.basic "map_output")
-  in
-    if map_string <> "" then
-      Export.export \<^theory> export_name [XML.Text map_string]
-    else
-      ()
-  end;
-
 fun find (pred: 'a -> bool) (lst: 'a list): 'a option =
   let
     fun aux [] = NONE
       | aux (x::xs) = if pred x then SOME x else aux xs
-  in
+  in                          
     aux lst
   end;
 
@@ -330,15 +292,13 @@ fun get_first (lst: 'a option list): 'a option =
     NONE => NONE
   | SOME x => x
 
-
 fun span_equal (span1: Command_Span.span, span2: Command_Span.span): bool =
   let
-    val content1 = span_list_to_string [span1]
-    val content2 = span_list_to_string [span2]
+    val content1 = concat_tokens (Command_Span.content span1, "")
+    val content2 = concat_tokens (Command_Span.content span2, "")
   in
     content1 = content2
-  end
-
+  end;
 
 fun find_starting_span_index (target_span: Command_Span.span, spans: Command_Span.span list): int =
   let                         
@@ -348,9 +308,7 @@ fun find_starting_span_index (target_span: Command_Span.span, spans: Command_Spa
     case get_first (map (fn (s, i) => aux i s) indexed_spans) of
       NONE => 0
     | SOME idx => idx
-  end
-;
-
+  end;
 
 val _ =
   Build.add_hook (fn qualifier => fn loaded_theories =>
@@ -374,43 +332,38 @@ val _ =
           val mirabelle_output_dir = Options.default_string \<^system_option>‹mirabelle_output_dir›;
           val check_theory = check_theories (space_explode "," mirabelle_theories);
 
-   fun make_commands (thy_index, (thy, segments)) =
-  let
-    val thy_long_name = Context.theory_long_name thy;
-    val _ = check_theory thy_long_name;
-    val all_theory_segments = List.concat (List.map #2 loaded_theories)
-    val all_theory_spans = List.map (fn {span, ...} => span) all_theory_segments
+          fun make_commands (thy_index, (thy, segments)) =
+            let
+              val thy_long_name = Context.theory_long_name thy;
+              val _ = check_theory thy_long_name;
+              val all_theory_segments = List.concat (List.map #2 loaded_theories);
+              val all_theory_spans = List.map (fn {span, ...} => span) all_theory_segments;
 
-    fun make_command span_acc (command, spans) =
-      let
-        val {command = tr, prev_state = st, state = st', span, ...} = command;
-        val name = Toplevel.name_of tr;
-        val pos = Toplevel.pos_of tr;
-        val updated_span_acc = span :: span_acc;
-        val start_idx = find_starting_span_index (span, all_theory_spans)
-        val relevant_spans_from_theory = List.drop (all_theory_spans, start_idx)
-        val initial_depth = Toplevel.level st'
-        val relevant_spans = take_relevant_spans (relevant_spans_from_theory, initial_depth)
-        val spans_string = span_list_to_string relevant_spans
-      in
-        if Context.proper_subthy (\<^theory>, thy) andalso
-           can (Proof.assert_backward o Toplevel.proof_of) st andalso
-           member (op =) whitelist name
-        then
-          (
-            Synchronized.change state_spans (Symtab.update (Toplevel.string_of_state st, spans_string));
-            {theory_index = thy_index, name = name, pos = pos,
-             pre = Toplevel.proof_of st, post = st', spans = updated_span_acc} :: spans
-          )
-        else
-          spans
-      end
-  in
-    if Resources.theory_qualifier thy_long_name = qualifier then
-      List.foldl (make_command []) [] segments
-    else
-      []
-  end;
+              fun make_command (command, spans) =
+                let
+                  val {command = tr, prev_state = st, state = st', span, ...} = command;
+                  val name = Toplevel.name_of tr;
+                  val pos = Toplevel.pos_of tr;
+                  val start_idx = find_starting_span_index (span, all_theory_spans);
+                  val relevant_spans_from_theory = List.drop (all_theory_spans, start_idx);
+                  val initial_depth = Toplevel.level st';
+                  val relevant_spans = take_relevant_spans (relevant_spans_from_theory, initial_depth);
+                in
+                  if Context.proper_subthy (\<^theory>, thy) andalso
+                     can (Proof.assert_backward o Toplevel.proof_of) st andalso
+                     member (op =) whitelist name
+                  then
+                    ({theory_index = thy_index, name = name, pos = pos,
+                      pre = Toplevel.proof_of st, post = st', spans = relevant_spans} :: spans)
+                  else
+                    spans
+                end
+            in
+              if Resources.theory_qualifier thy_long_name = qualifier then
+                List.foldl (make_command) [] segments
+              else
+                []
+            end;
           (* initialize actions *)
           val contexts = actions |> map_index (fn (n, (label, name, args)) =>
             let
@@ -458,8 +411,7 @@ val _ =
                 apply_action (if mirabelle_dry_run then dry_run_action else action) context command);
             in
           (* finalize actions *)
-          List.app (uncurry finalize_action) contexts;
-          print_map (Synchronized.value state_spans)
+          List.app (uncurry finalize_action) contexts
         end
     end);
 
