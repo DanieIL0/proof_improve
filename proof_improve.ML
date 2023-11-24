@@ -1,18 +1,17 @@
-(*  Title:      HOL/Tools/proof_improve.ML
+(*  Title:      HOL/Tools/Proof_Improve/proof_improve.ML
     Author:     Daniel Lipkin, TU Muenchen
 
 This module provides utilities for improving Isabelle proofs.
 *)
 signature PROOF_IMPROVE =
 sig
-  datatype outcome = Rewrite_Succeeded of string
-              | TimeOut of string
-              | ResourcesOut of string
+   datatype outcome = FoundAlternative of  string * string
               | Unknown of string
-              | None of string
               | ScoreNotLowered of string
+              | NoAlternativeFound of string
 
   val proof_improve : Proof.state -> string -> outcome
+  val string_of_outcome : outcome -> string
 end;
 
 structure Proof_Improve : PROOF_IMPROVE =
@@ -20,16 +19,22 @@ struct
   open Proof_Improve_Scorer
   open Proof_Improve_Finder
 
-   datatype outcome = Rewrite_Succeeded of string
-              | TimeOut of string
-              | ResourcesOut of string
+   datatype outcome = FoundAlternative of string * string
               | Unknown of string
-              | None of string
               | ScoreNotLowered of string
+              | NoAlternativeFound of string
+
+fun string_of_outcome outcome =
+  case outcome of
+      FoundAlternative ( _, log) => "Outcome: Found Alternative\n" ^ log
+    | Unknown log => "Outcome: Unknown\n" ^ log
+    | NoAlternativeFound log => "Outcome: No Alternative Found\n" ^ log
+    | ScoreNotLowered log => "Outcome: Score Not Lowered\n" ^ log
+
 
 fun proof_improve st proof_text =
   let
-    val (original_score, original_log) = score (List.length (Proof.the_fact_or_facts st)) proof_text
+    val (original_score, original_log) = score (List.length (Proof.the_fact_or_facts st) + 1) proof_text
     val original_score_msg = "Scorer result (original): " ^ Real.toString original_score
     val find_result = find st
     val initial_log = original_log  ^ original_score_msg
@@ -39,7 +44,7 @@ fun proof_improve st proof_text =
         let
           val log_msg = initial_log ^ "\nNo potential rewrite found."
         in
-          ScoreNotLowered log_msg
+          NoAlternativeFound (log_msg ^ "\n\n")
         end
     | SOME (found_facts, found_proof_text, log) =>
       let
@@ -50,22 +55,19 @@ fun proof_improve st proof_text =
         if found_score < original_score
         then
           let
-            val outcome_msg = "Outcome: Rewrite_Succeeded\n"
           in
-            Rewrite_Succeeded (combined_log ^ "\n" ^ outcome_msg)
+            FoundAlternative (found_proof_text, combined_log ^ "\n\n")
           end
         else if found_score >= original_score
         then
           let
-            val outcome_msg = "Outcome: ScoreNotLowered\n"
           in
-            ScoreNotLowered (combined_log ^ "\n" ^ outcome_msg)
+            ScoreNotLowered (combined_log ^ "\n\n")
           end
         else
           let
-            val outcome_msg = "Outcome: Unknown\n"
           in
-            Unknown (combined_log ^ "\n" ^ outcome_msg)
+            Unknown (combined_log ^ "\n\n")
           end
       end
   end;

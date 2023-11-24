@@ -7,6 +7,11 @@ Mirabelle action: "proof_improve".
 structure Mirabelle_Proof_Improve: MIRABELLE_ACTION =
 struct
   open Proof_Improve
+  open Proof_Improve_Changes
+
+  val data = Synchronized.var "Mirabelle_Proof_Improve_data" (create ())
+
+
 
 fun get_content spans : string =
   let
@@ -31,20 +36,28 @@ fun get_content spans : string =
      concat_tokens (non_comment_tokens, "")
   end;
 
-  fun make_action ({timeout, ...} : Mirabelle.action_context) =
+fun make_action ({timeout, ...} : Mirabelle.action_context) =
     let
-      val generous_timeout = Time.scale 200.0 timeout
+      val generous_timeout = Time.scale 1000.0 timeout
 
-      fun run ({pre, spans, ...} : Mirabelle.command) : string =
+      fun run ({pre, spans, pos, ...} : Mirabelle.command) : string =
         let
-          val outcome = Timeout.apply generous_timeout (proof_improve) pre (get_content spans)
+          val proof_text = get_content spans
+          val outcome = Timeout.apply generous_timeout (proof_improve) pre proof_text
+          val current_data = Synchronized.value data
+          val updated_data =
+            case outcome of
+              FoundAlternative (found_proof, _) =>
+                add_change (proof_text, found_proof, pos) current_data
+            | _ =>
+                add_unsuccessful_call current_data
         in
+          Synchronized.change data (fn _ => updated_data);
           string_of_outcome outcome ^ "\n"
         end
 
-      fun finalize () : string = "End of Proof Improve Call"
+      fun finalize () : string = tostring (Synchronized.value data)
     in
-
       ("", {run = run, finalize = finalize})
     end
 

@@ -34,7 +34,7 @@ end
 ```
 
 
-Add span to commands
+
 ```ML
 (*  Title:      HOL/Tools/Mirabelle/mirabelle.ML
     Author:     Jasmin Blanchette, TU Munich
@@ -160,7 +160,7 @@ fun finalize_action ({finalize, ...} : action) context =
     val s = run_action_function finalize;
     val action_path = make_action_path context;
     val export_name =
-      Path.binding0 (Path.basic "mirabelle" + action_path + Path.basic "finalize");
+      Path.binding0 (Path.basic "mirabelle" + Path.basic "finalize");
   in
     if s <> "" then
       Export.export \<^theory> export_name [XML.Text s]
@@ -222,6 +222,7 @@ fun check_theories strs =
     fun check_pos range = check_line range o Position.line_of;
   in check_pos o get_theory end;
 
+
 (* presentation hook *)
 
 val whitelist = ["apply", "by", "proof", "unfolding", "using"];
@@ -229,21 +230,23 @@ val whitelist = ["apply", "by", "proof", "unfolding", "using"];
 fun calculate_depth (spans: Command_Span.span list): int =
   let
     val tokens = List.concat (List.map Command_Span.content spans)
-    fun depth_aux (toks, current_depth) =
+    fun depth_aux (toks, current_depth, inside_apply_block) =
       case toks of
           [] => current_depth
         | tok::rest =>
             if Token.is_command tok then
               (case Token.content_of tok of
-                 "proof" => depth_aux (rest, current_depth + 1)
-               | "qed" => depth_aux (rest, current_depth - 1)
-               | "done" => depth_aux (rest, current_depth - 1)
-               | _ => depth_aux (rest, current_depth))
+                 "proof" => depth_aux (rest, current_depth + 1, inside_apply_block)
+               | "qed" => depth_aux (rest, current_depth - 1, inside_apply_block)
+               | "done" => if inside_apply_block then depth_aux (rest, current_depth - 1, false) else depth_aux (rest, current_depth, inside_apply_block)
+               | "apply" => depth_aux (rest, current_depth + 1, true)
+               | _ => depth_aux (rest, current_depth, inside_apply_block))
             else
-              depth_aux (rest, current_depth)
+              depth_aux (rest, current_depth, inside_apply_block)
   in
-    depth_aux (tokens, 0)
+    depth_aux (tokens, 0, false)
   end;
+
 
 fun concat_tokens (toks: Token.T list, acc: string): string =
       case toks of
@@ -262,22 +265,25 @@ fun concat_tokens (toks: Token.T list, acc: string): string =
 
 fun take_relevant_spans (spans: Command_Span.span list, initial_depth: int): Command_Span.span list =
   let
-    fun take_spans (remaining_spans, current_depth, acc) =
+    fun take_spans (remaining_spans, current_depth, acc, inside_apply_block) =
       case remaining_spans of
         [] => List.rev acc
       | span::rest =>
           let
             val new_depth = calculate_depth [span]
             val next_depth = current_depth + new_depth
+            val is_apply = Token.content_of (hd (Command_Span.content span)) = "apply"
+            val is_done = Token.content_of (hd (Command_Span.content span)) = "done"
           in
-            if next_depth = initial_depth then
+            if next_depth = initial_depth orelse (inside_apply_block andalso is_done) then
               List.rev (span::acc)
             else
-              take_spans (rest, next_depth, span::acc)
+              take_spans (rest, next_depth, span::acc, inside_apply_block orelse is_apply)
           end
   in
-    take_spans (spans, initial_depth, [])
+    take_spans (spans, initial_depth, [], false)
   end;
+
 
 fun find (pred: 'a -> bool) (lst: 'a list): 'a option =
   let
@@ -291,6 +297,7 @@ fun get_first (lst: 'a option list): 'a option =
   case find is_some lst of
     NONE => NONE
   | SOME x => x
+
 
 fun span_equal (span1: Command_Span.span, span2: Command_Span.span): bool =
   let
@@ -484,4 +491,15 @@ fun cpu_time f x =
   in (y, Time.toMilliseconds elapsed) end;
 
 end
+```
+
+Proof.ML
+
+```ML
+val the_fact_or_facts: state -> thm list
+
+fun the_fact_or_facts state =
+  (case get_facts state of
+    SOME (facts, proper) => (if proper then () else report_improper state; facts)
+  | NONE => []);
 ```

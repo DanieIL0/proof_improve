@@ -156,6 +156,7 @@ struct
 fun score facts proof_text =
   let
     val normalize_mode = get_normalize_mode ()
+    val logging = get_logging ()
 
     val weight_length = get_weight_length ()
     val weight_lemma = get_weight_lemma ()
@@ -198,11 +199,13 @@ fun score facts proof_text =
 
     val normalized_score = weighted_sum / total_weight
 
-    val full_report = length_report ^ fact_report ^ entropy_report ^
-                      symbol_to_text_ratio_report ^ depth_report ^ apply_report
-                      ^ "Proof Text: " ^ proof_text ^ "\n"
+    val logs =
+    if logging then
+      length_report ^ fact_report ^ entropy_report ^  symbol_to_text_ratio_report ^ depth_report ^ apply_report
+      ^ "Proof Text: " ^ proof_text ^ "\n"
+    else ""
   in
-    (normalized_score, full_report)
+    (normalized_score, logs)
   end;
 
   fun score_state st proof_text = score (List.length (Proof.the_facts st)) proof_text

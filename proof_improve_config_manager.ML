@@ -20,6 +20,7 @@ sig
   val get_max_depth : unit -> int
   val get_max_apply : unit -> int
   val get_normalize_mode : unit -> string
+  val get_logging : unit -> bool
 end;
 
 structure Proof_Improve_Config_Manager : PROOF_IMPROVE_CONFIG_MANAGER =
@@ -36,7 +37,8 @@ struct
     max_entropy : real,
     max_depth : int,
     max_apply : int,
-    normalize_mode : string
+    normalize_mode : string,
+    logging : bool
   }
 
   val default_config = Config {
@@ -52,7 +54,8 @@ struct
     max_entropy = 50.0,
     max_depth = 5,
     max_apply = 6,
-    normalize_mode = "linear" (*can be log/linear*)
+    normalize_mode = "linear", (*can be log/linear*)
+    logging = true
   }
 
   fun get_weight_length () = let val Config cfg = default_config in #weight_length cfg end
@@ -67,5 +70,6 @@ struct
   fun get_max_depth () = let val Config cfg = default_config in #max_depth cfg end
   fun get_max_apply () = let val Config cfg = default_config in #max_apply cfg end
   fun get_normalize_mode () = let val Config cfg = default_config in #normalize_mode cfg end
+  fun get_logging () = let val Config cfg = default_config in #logging cfg end
 
 end;
