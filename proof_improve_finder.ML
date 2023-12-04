@@ -6,7 +6,7 @@ Finding proof alternatives using sledgehammer.
 
 signature PROOF_IMPROVE_FINDER =
 sig
-  val find: Proof.state -> (int * string * string) option
+  val find: Proof.state -> (int * string) option
 end;
 
 structure Proof_Improve_Finder: PROOF_IMPROVE_FINDER =
@@ -34,7 +34,8 @@ fun parse_sledgehammer_result (result: string) : string =
       | SOME i => String.extract (result_without_prefix, 0, SOME i)
 
     val result_trimmed =
-      if size result_without_timing > 0 andalso String.sub (result_without_timing, size result_without_timing - 1) = #" " then
+      if size result_without_timing > 0 andalso String.sub
+      (result_without_timing, size result_without_timing - 1) = #" " then
         String.extract (result_without_timing, 0, SOME (size result_without_timing - 1))
       else
         result_without_timing
@@ -45,9 +46,13 @@ fun parse_sledgehammer_result (result: string) : string =
 
 fun find (st: Proof.state) =
   let
+    val generous_timeout = Time.scale 1.0 (Time.fromSeconds 20)
     val params = Sledgehammer_Commands.default_params \<^theory> []
     val fact_override = {add = [], del = [], only = false}
-    val (_, (outcome, try_this)) = Sledgehammer.run_sledgehammer params Sledgehammer_Prover.Normal NONE 1 fact_override st
+    val (_, (outcome, try_this)) = (Timeout.apply generous_timeout
+      Sledgehammer.run_sledgehammer params Sledgehammer_Prover.Normal
+              NONE 1 fact_override st handle Timeout.TIMEOUT _  =>
+              (false, (Sledgehammer.SH_None, "")));
   in
     case outcome of
       Sledgehammer.SH_Some (prover_result, _) =>
@@ -60,10 +65,9 @@ fun find (st: Proof.state) =
              if String.isSubstring "failed" result then
                NONE
              else
-               SOME (List.length facts, parse_sledgehammer_result try_this, "Found Proof:")
+               SOME (List.length facts, parse_sledgehammer_result try_this)
            end
          | SOME _ => NONE)
     | _ => NONE
   end
-
-end
+end;

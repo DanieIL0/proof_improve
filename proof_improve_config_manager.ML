@@ -44,16 +44,16 @@ struct
   val default_config = Config {
     weight_length = 0.2,
     weight_lemma = 0.15,
-    weight_entropy = 0.1,
+    weight_entropy = 0.05,
     weight_symbol_to_text_ratio = 0.05,
     weight_depth = 0.1,
-    weight_apply = 0.4,
+    weight_apply = 0.45,
 
     max_length = 5000,
     max_lemma = 10,
-    max_entropy = 50.0,
+    max_entropy = 8.0,
     max_depth = 5,
-    max_apply = 6,
+    max_apply = 12,
     normalize_mode = "linear", (*can be log/linear*)
     logging = true
   }
@@ -61,7 +61,8 @@ struct
   fun get_weight_length () = let val Config cfg = default_config in #weight_length cfg end
   fun get_weight_lemma () = let val Config cfg = default_config in #weight_lemma cfg end
   fun get_weight_entropy () = let val Config cfg = default_config in #weight_entropy cfg end
-  fun get_weight_symbol_to_text_ratio () = let val Config cfg = default_config in #weight_symbol_to_text_ratio cfg end
+  fun get_weight_symbol_to_text_ratio () = let val Config cfg = default_config in
+  #weight_symbol_to_text_ratio cfg end
   fun get_weight_depth () = let val Config cfg = default_config in #weight_depth cfg end
   fun get_weight_apply () = let val Config cfg = default_config in #weight_apply cfg end
   fun get_max_length () = let val Config cfg = default_config in #max_length cfg end
@@ -71,5 +72,4 @@ struct
   fun get_max_apply () = let val Config cfg = default_config in #max_apply cfg end
   fun get_normalize_mode () = let val Config cfg = default_config in #normalize_mode cfg end
   fun get_logging () = let val Config cfg = default_config in #logging cfg end
-
 end;

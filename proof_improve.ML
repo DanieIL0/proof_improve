@@ -34,7 +34,8 @@ fun string_of_outcome outcome =
 
 fun proof_improve st proof_text =
   let
-    val (original_score, original_log) = score (List.length (Proof.the_fact_or_facts st) + 1) proof_text
+    val (original_score, original_log) = score
+    (List.length (Proof.the_fact_or_facts st) + 1) proof_text
     val original_score_msg = "Scorer result (original): " ^ Real.toString original_score
     val find_result = find st
     val initial_log = original_log  ^ original_score_msg
@@ -46,29 +47,18 @@ fun proof_improve st proof_text =
         in
           NoAlternativeFound (log_msg ^ "\n\n")
         end
-    | SOME (found_facts, found_proof_text, log) =>
+    | SOME (found_facts, found_proof_text) =>
       let
         val (found_score, found_log) = score found_facts found_proof_text
         val found_score_msg = "Scorer result (found): " ^ Real.toString found_score
-        val combined_log = initial_log ^ "\n" ^ log ^ "\n" ^ found_log ^  found_score_msg
+        val combined_log = initial_log ^ "\nFound Proof:\n" ^ found_log ^  found_score_msg
       in
-        if found_score < original_score
-        then
-          let
-          in
-            FoundAlternative (found_proof_text, combined_log ^ "\n\n")
-          end
-        else if found_score >= original_score
-        then
-          let
-          in
-            ScoreNotLowered (combined_log ^ "\n\n")
-          end
+        if found_score < original_score then
+          FoundAlternative (found_proof_text, combined_log ^ "\n\n")
+        else if found_score >= original_score then
+          ScoreNotLowered (combined_log ^ "\n\n")
         else
-          let
-          in
-            Unknown (combined_log ^ "\n\n")
-          end
+          Unknown (combined_log ^ "\n\n")
       end
   end;
 end

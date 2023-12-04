@@ -9,51 +9,17 @@ open Proof_Improve_Config_Manager
 signature PROOF_IMPROVE_SCORER =
 sig
   val score : int -> string -> real * string
-  val score_thm :  thm list -> string -> real * string
+  val score_thm :  thm list -> string  -> real * string
   val score_state :  Proof.state -> string -> real * string
 end;
 
-fun calculate_length_score st : int =String.size st
+fun calculate_length_score st : int = String.size st
 
-val empty_dict = Symtab.empty: (int Symtab.table)
-
-fun count_freqs [] dict = dict
-  | count_freqs (x::xs) dict =
-    let
-      val count = case Symtab.lookup dict (Int.toString x) of
-                    NONE => 0
-                  | SOME n => n
-      val updated_dict = Symtab.update (Int.toString x, count + 1) dict
-    in
-      count_freqs xs updated_dict
-    end
-
-fun build_mapping dict =
+fun calculate_entropy_score proof_text : real =
   let
-    val items = Symtab.dest dict
-    val sorted_items = sort (fn ((_, a: int), (_, b)) => Int.compare(a, b)) items
-    val mapping = map_index (fn (i, (x, _)) => (x, Int.toString i)) sorted_items
-  in
-    Symtab.make mapping
-  end
-
-fun compress_list mapping lst =
-  map (fn x => the (Symtab.lookup mapping (Int.toString x)) |> Int.fromString |> the) lst
-
-fun compress_ints (ints: int list) : int list =
-  let
-    val freq_dict = count_freqs ints empty_dict
-    val mapping = build_mapping freq_dict
-    val compressed = compress_list mapping ints
-  in
-    compressed
-  end
-
-fun calculate_entropy_score st : real =
-  let
-    val total_chars = size st
-
-    fun count_char c = List.foldl (fn (ch, acc) => if ch = c then acc + 1 else acc) 0 (String.explode st)
+    val total_chars = size proof_text
+    fun count_char c = List.foldl (fn (ch, acc) =>
+    if ch = c then acc + 1 else acc) 0 (String.explode proof_text)
     fun freq c = (Real.fromInt (count_char c)) / (Real.fromInt total_chars)
     fun entropy c = let val p = freq c in p * Math.ln p / Math.ln 2.0 end
 
@@ -61,9 +27,10 @@ fun calculate_entropy_score st : real =
       case xs of
           [] => []
         | [x] => [x]
-        | x::y::ys => if x = y then dedup_sorted_list (y::ys) else x :: dedup_sorted_list (y::ys)
+        | x::y::ys => if x = y then dedup_sorted_list (y::ys)
+        else x :: dedup_sorted_list (y::ys)
 
-    val chars_list = String.explode st
+    val chars_list = String.explode proof_text
                       |> sort Char.compare
                       |> dedup_sorted_list
 
@@ -72,20 +39,26 @@ fun calculate_entropy_score st : real =
     else ~1.0 * (List.foldl (fn (c, acc) => acc + entropy c) 0.0 chars_list)
   end;
 
-fun calculate_symbol_to_text_ratio st : real =
+fun calculate_symbol_to_text_ratio proof_text : real =
   let
-    val content_str = st
-    val total_chars = size content_str
+    val total_chars = size proof_text
     val symbols_count = List.foldl (fn (ch, acc) =>
-                      if Char.isAlpha ch then acc else acc + 1) 0 (String.explode content_str)
+                      if Char.isAlpha ch orelse ch = #" "
+                      then acc else acc + 1) 0 (String.explode proof_text)
   in
     if total_chars = 0 then 0.0
     else (Real.fromInt symbols_count / Real.fromInt total_chars) * 100.0
   end;
 
-fun calculate_depth (st: string): int =
+fun by_without_rule_score proof_text : int =
+    if String.isSubstring "by" proof_text andalso
+    String.isSubstring "rule" proof_text
+    then 0
+    else 1
+
+fun calculate_depth proof_text =
   let
-    val tokens = String.tokens (fn c => c = #" ") st
+    val tokens = String.tokens (fn c => c = #" ") proof_text
 
     fun is_command token =
       List.exists (fn cmd => cmd = token) ["proof", "qed", "done"]
@@ -106,14 +79,12 @@ fun calculate_depth (st: string): int =
     depth_aux (tokens, 0)
   end;
 
-fun count_applys (st: string) : int =
+fun count_applys proof_text =
   let
-    val tokens = String.tokens (fn c => c = #" ") st
-
+    val tokens = String.tokens (fn c => c = #" ") proof_text
     fun is_apply_command token = (token = "apply")
-
     val apply_count = List.foldl (fn (tok, acc) =>
-                      if is_apply_command tok then acc + 1 else acc) 0 tokens
+      if is_apply_command tok then acc + 1 else acc) 0 tokens
   in
     apply_count
   end;
@@ -139,13 +110,13 @@ fun linear_normalize (value: real, max_value: real) : real =
       if result > 100.0 then 100.0 else result
     end;
 
-fun normalize_score_real (mode: string, value: real, max_value: real) : real =
+fun normalize_score_real (mode, value: real, max_value) : real =
   case mode of
       "log" => log_normalize (value, max_value)
     | "linear" => linear_normalize (value, max_value)
     | _ => (tracing ("Error: Invalid normalization mode: " ^ mode); 0.0);
 
-fun normalize_score_int (mode: string, value: int, max_value: int) : real =
+fun normalize_score_int (mode, value: int, max_value) : real =
   case mode of
       "log" => log_normalize (Real.fromInt value, Real.fromInt max_value)
     | "linear" => linear_normalize (Real.fromInt value, Real.fromInt max_value)
@@ -153,7 +124,7 @@ fun normalize_score_int (mode: string, value: int, max_value: int) : real =
 
 structure Proof_Improve_Scorer : PROOF_IMPROVE_SCORER =
 struct
-fun score facts proof_text =
+fun score facts proof_text  =
   let
     val normalize_mode = get_normalize_mode ()
     val logging = get_logging ()
@@ -171,17 +142,20 @@ fun score facts proof_text =
     val max_depth  = get_max_depth ()
     val max_apply = get_max_apply ()
 
-    val length_score = normalize_score_int (normalize_mode, calculate_length_score proof_text, max_length)
+    val length_score = normalize_score_int (normalize_mode, calculate_length_score proof_text,
+      max_length)
     val length_report = "Length score: " ^ Real.toString length_score ^ "\n"
 
     val fact_score = normalize_score_int (normalize_mode, facts, max_lemma)
     val fact_report = "Fact score: " ^ Real.toString fact_score ^ "\n"
 
-    val entropy_score = normalize_score_real (normalize_mode, calculate_entropy_score proof_text, max_entropy)
+    val entropy_score = normalize_score_real (normalize_mode, calculate_entropy_score proof_text,
+      max_entropy)
     val entropy_report = "Entropy score: " ^ Real.toString entropy_score ^ "\n"
 
     val symbol_to_text_ratio_score = calculate_symbol_to_text_ratio proof_text
-    val symbol_to_text_ratio_report = "Symbol to text ratio score: " ^ Real.toString symbol_to_text_ratio_score ^ "\n"
+    val symbol_to_text_ratio_report = "Symbol to text ratio score: " ^
+    Real.toString symbol_to_text_ratio_score ^ "\n"
 
     val depth_score = normalize_score_int (normalize_mode, calculate_depth proof_text, max_depth)
     val depth_report = "Proof depth score: " ^ Real.toString depth_score ^ "\n"
@@ -190,19 +164,20 @@ fun score facts proof_text =
     val apply_report = "Apply score: " ^ Real.toString apply_score ^ "\n"
 
     val weighted_sum = (length_score * weight_length) + (fact_score * weight_lemma) +
-                         (entropy_score * weight_entropy) + (depth_score * weight_depth) +
-                         (symbol_to_text_ratio_score * weight_symbol_to_text_ratio) +
-                         (apply_score * weight_apply)
+                       (entropy_score * weight_entropy) + (depth_score * weight_depth) +
+                       (symbol_to_text_ratio_score * weight_symbol_to_text_ratio) +
+                       (apply_score * weight_apply)
 
-      val total_weight = weight_length + weight_lemma + weight_entropy +
-                         weight_symbol_to_text_ratio + weight_depth + weight_apply
+    val total_weight = weight_length + weight_lemma + weight_entropy +
+                       weight_symbol_to_text_ratio + weight_depth + weight_apply
 
-    val normalized_score = weighted_sum / total_weight
+    val normalized_score = weighted_sum / total_weight +
+    (Real.fromInt (by_without_rule_score proof_text))
 
     val logs =
     if logging then
-      length_report ^ fact_report ^ entropy_report ^  symbol_to_text_ratio_report ^ depth_report ^ apply_report
-      ^ "Proof Text: " ^ proof_text ^ "\n"
+      length_report ^ fact_report ^ entropy_report ^  symbol_to_text_ratio_report
+      ^ depth_report ^ apply_report ^ "Proof Text: " ^ proof_text ^ "\n"
     else ""
   in
     (normalized_score, logs)
@@ -210,4 +185,4 @@ fun score facts proof_text =
 
   fun score_state st proof_text = score (List.length (Proof.the_facts st)) proof_text
   fun score_thm thms proof_text = score (List.length thms) proof_text
-end
+end;

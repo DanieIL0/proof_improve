@@ -15,22 +15,29 @@ end;
 
 structure Proof_Improve_Changes : PROOF_IMPROVE_CHANGES =
 struct
-  datatype proof_change = ProofChange of { prev_proof: string, changed_proof: string, position: Position.T }
-  datatype proof_changes = ProofChanges of { changes: proof_change list, total_proofs: int, successful_changes: int }
+  datatype proof_change = ProofChange of { prev_proof: string, changed_proof: string,
+    position: Position.T }
+  datatype proof_changes = ProofChanges of { changes: proof_change list, total_proofs: int,
+    successful_changes: int }
 
   fun create () = ProofChanges { changes = [], total_proofs = 0, successful_changes = 0 }
 
-  fun add_change (prev_proof, changed_proof, position) (ProofChanges {changes, total_proofs, successful_changes}) =
+  fun add_change (prev_proof, changed_proof, position) (ProofChanges {changes, total_proofs,
+      successful_changes}) =
     let
-      val new_change = ProofChange {prev_proof = prev_proof, changed_proof = changed_proof, position = position}
+      val new_change = ProofChange {prev_proof = prev_proof, changed_proof = changed_proof,
+        position = position}
     in
-      ProofChanges { changes = new_change :: changes, total_proofs = total_proofs + 1, successful_changes = successful_changes + 1}
+      ProofChanges { changes = new_change :: changes, total_proofs = total_proofs + 1,
+        successful_changes = successful_changes + 1}
     end;
 
   fun add_unsuccessful_call (ProofChanges {changes, total_proofs, successful_changes}) =
-      ProofChanges { changes = changes, total_proofs = total_proofs + 1, successful_changes = successful_changes }
+      ProofChanges { changes = changes, total_proofs = total_proofs + 1,
+        successful_changes = successful_changes }
 
-  fun proof_change_compare (ProofChange {position = pos1, ...}) (ProofChange {position = pos2, ...}) =
+  fun proof_change_compare (ProofChange {position = pos1, ...})
+  (ProofChange {position = pos2, ...}) =
     case (Position.line_of pos1, Position.line_of pos2) of
       (SOME l1, SOME l2) => Int.compare (l1, l2)
     | (SOME _, NONE) => GREATER
@@ -59,9 +66,9 @@ struct
     let
       val sorted_changes = sort_proof_changes changes
       val changes_str = map proof_change_tostring sorted_changes
-      val stats = "Total Proofs: " ^ Int.toString total_proofs ^ ", Successful Changes: " ^ Int.toString successful_changes
+      val stats = "Total Proofs: " ^ Int.toString total_proofs ^
+                  ", Successful Changes: " ^ Int.toString successful_changes
     in
       String.concatWith "\n" changes_str ^ "\n" ^ stats
     end;
-
 end;
