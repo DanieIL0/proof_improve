@@ -52,7 +52,7 @@ fun make_action ({timeout, ...} : Mirabelle.action_context) =
                add_unsuccessful_call current_data
       in
         Synchronized.change data (fn _ => updated_data);
-        string_of_outcome outcome ^ "\n"
+        "Outcome: " ^ string_of_outcome outcome ^ "\n"
       end
 
     fun finalize () : string = tostring (Synchronized.value data)

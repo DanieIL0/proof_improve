@@ -50,33 +50,54 @@ fun calculate_symbol_to_text_ratio proof_text : real =
     else (Real.fromInt symbols_count / Real.fromInt total_chars) * 100.0
   end;
 
-fun by_without_rule_score proof_text : int =
-    if String.isSubstring "by" proof_text andalso
-    String.isSubstring "rule" proof_text
-    then 0
-    else 1
+fun calculate_used_methods_score proof_text : real option =
+    let
+        val apply_bys = String.tokens (fn c => c = #" ") proof_text
+                        |> List.filter (fn s => s = "apply" orelse s = "by" orelse s = "proof")
+        val count_apply_bys = length apply_bys
+
+        fun score_method method =
+            if String.isSubstring method proof_text then
+               if method = "intro" orelse method = "elim" orelse method = "unfold"
+                then 50.0
+                else if method = "iprover" orelse method = "blast" orelse method = "fast" orelse
+                        method = "simp" orelse method = "force" orelse method = "auto" orelse
+                        method = "arith"
+                then 100.0
+                else 0.0
+            else 0.0
+
+        val methods = ["iprover", "blast", "fast",
+                       "simp", "force", "auto", "arith"]
+        val total_score = fold (fn method => fn acc => acc + score_method method) methods 0.0
+    in
+        if count_apply_bys = 0 then NONE
+        else SOME (total_score / Real.fromInt count_apply_bys)
+    end
 
 fun calculate_depth proof_text =
   let
     val tokens = String.tokens (fn c => c = #" ") proof_text
 
     fun is_command token =
-      List.exists (fn cmd => cmd = token) ["proof", "qed", "done"]
+      List.exists (fn cmd => cmd = token) ["proof", "qed", "done", "apply"]
 
-    fun depth_aux (toks, current_depth) =
+    fun depth_aux (toks, current_depth, first_apply) =
       case toks of
           [] => current_depth
         | tok::rest =>
             if is_command tok then
               case tok of
-                 "proof" => depth_aux (rest, current_depth + 1)
-               | "qed" => depth_aux (rest, current_depth - 1)
-               | "done" => depth_aux (rest, current_depth - 1)
-               | _ => depth_aux (rest, current_depth)
+                 "proof" => depth_aux (rest, current_depth + 1, first_apply)
+               | "qed" => depth_aux (rest, current_depth - 1, true)
+               | "done" => depth_aux (rest, current_depth - 1, true)
+               | "apply" => if first_apply then depth_aux (rest, current_depth + 1, false)
+                            else depth_aux (rest, current_depth, first_apply)
+               | _ => depth_aux (rest, current_depth, first_apply)
             else
-              depth_aux (rest, current_depth)
+              depth_aux (rest, current_depth, first_apply)
   in
-    depth_aux (tokens, 0)
+    depth_aux (tokens, 0, true)
   end;
 
 fun count_applys proof_text =
@@ -163,21 +184,27 @@ fun score facts proof_text  =
     val apply_score = normalize_score_int (normalize_mode, count_applys proof_text, max_apply)
     val apply_report = "Apply score: " ^ Real.toString apply_score ^ "\n"
 
+    val used_methods_score_opt = calculate_used_methods_score proof_text
+    val (used_methods_score, weight_used_methods, used_methods_report) =
+         case used_methods_score_opt of
+              NONE => (0.0, 0.0, "no by's found\n")
+              | SOME x => (x, get_weight_used_methods (), "Used methods score: " ^ Real.toString x ^ "\n")
+
     val weighted_sum = (length_score * weight_length) + (fact_score * weight_lemma) +
                        (entropy_score * weight_entropy) + (depth_score * weight_depth) +
                        (symbol_to_text_ratio_score * weight_symbol_to_text_ratio) +
-                       (apply_score * weight_apply)
+                       (apply_score * weight_apply) + (used_methods_score * weight_used_methods)
 
     val total_weight = weight_length + weight_lemma + weight_entropy +
                        weight_symbol_to_text_ratio + weight_depth + weight_apply
+                       + weight_used_methods
 
-    val normalized_score = weighted_sum / total_weight +
-    (Real.fromInt (by_without_rule_score proof_text))
+    val normalized_score = weighted_sum / total_weight
 
     val logs =
     if logging then
       length_report ^ fact_report ^ entropy_report ^  symbol_to_text_ratio_report
-      ^ depth_report ^ apply_report ^ "Proof Text: " ^ proof_text ^ "\n"
+      ^ depth_report ^ apply_report ^ used_methods_report ^ "Proof Text: " ^ proof_text ^ "\n"
     else ""
   in
     (normalized_score, logs)

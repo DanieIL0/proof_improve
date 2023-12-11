@@ -9,6 +9,7 @@ sig
               | Unknown of string
               | ScoreNotLowered of string
               | NoAlternativeFound of string
+              | GoodEnoughUnderCutoff of string
 
   val proof_improve : Proof.state -> string -> outcome
   val string_of_outcome : outcome -> string
@@ -16,49 +17,54 @@ end;
 
 structure Proof_Improve : PROOF_IMPROVE =
 struct
-  open Proof_Improve_Scorer
-  open Proof_Improve_Finder
+open Proof_Improve_Scorer
+open Proof_Improve_Finder
 
-   datatype outcome = FoundAlternative of string * string
-              | Unknown of string
-              | ScoreNotLowered of string
-              | NoAlternativeFound of string
+datatype outcome = FoundAlternative of string * string
+           | Unknown of string
+           | ScoreNotLowered of string
+           | NoAlternativeFound of string
+           | GoodEnoughUnderCutoff of string
 
 fun string_of_outcome outcome =
   case outcome of
-      FoundAlternative ( _, log) => "Outcome: Found Alternative\n" ^ log
-    | Unknown log => "Outcome: Unknown\n" ^ log
-    | NoAlternativeFound log => "Outcome: No Alternative Found\n" ^ log
-    | ScoreNotLowered log => "Outcome: Score Not Lowered\n" ^ log
+      FoundAlternative ( _, log) => "Found Alternative\n" ^ log
+    | Unknown log => "Unknown\n" ^ log
+    | NoAlternativeFound log => "No Alternative Found\n" ^ log
+    | ScoreNotLowered log => "Score Not Lowered\n" ^ log
+    | GoodEnoughUnderCutoff log => "Good Enough; The Score is under the Cutoff\n" ^ log
 
 
 fun proof_improve st proof_text =
   let
     val (original_score, original_log) = score
-    (List.length (Proof.the_fact_or_facts st) + 1) proof_text
+      (List.length (Proof.the_fact_or_facts st) + 1) proof_text
     val original_score_msg = "Scorer result (original): " ^ Real.toString original_score
     val find_result = find st
-    val initial_log = original_log  ^ original_score_msg
+    val initial_log = original_log ^ original_score_msg
   in
-    case find_result of
-      NONE =>
+    if original_score < 4.5 then
+      GoodEnoughUnderCutoff (initial_log ^ "\n\n")
+    else
+      case find_result of
+        NONE =>
+          let
+            val log_msg = initial_log ^ "\nNo potential rewrite found."
+          in
+            NoAlternativeFound (log_msg ^ "\n\n")
+          end
+      | SOME (found_facts, found_proof_text) =>
         let
-          val log_msg = initial_log ^ "\nNo potential rewrite found."
+          val (found_score, found_log) = score found_facts found_proof_text
+          val found_score_msg = "Scorer result (found): " ^ Real.toString found_score ^" \n"
+          val combined_log = initial_log ^ "\n" ^ found_log ^ found_score_msg
         in
-          NoAlternativeFound (log_msg ^ "\n\n")
+          if found_score < original_score then
+            FoundAlternative (found_proof_text, combined_log ^ "\n\n")
+          else if found_score >= original_score then
+            ScoreNotLowered (combined_log ^ "\n\n")
+          else
+            Unknown (combined_log ^ "\n\n")
         end
-    | SOME (found_facts, found_proof_text) =>
-      let
-        val (found_score, found_log) = score found_facts found_proof_text
-        val found_score_msg = "Scorer result (found): " ^ Real.toString found_score
-        val combined_log = initial_log ^ "\nFound Proof:\n" ^ found_log ^  found_score_msg
-      in
-        if found_score < original_score then
-          FoundAlternative (found_proof_text, combined_log ^ "\n\n")
-        else if found_score >= original_score then
-          ScoreNotLowered (combined_log ^ "\n\n")
-        else
-          Unknown (combined_log ^ "\n\n")
-      end
   end;
 end

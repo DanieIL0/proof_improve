@@ -1,7 +1,7 @@
 (*  Title:      HOL/Tools/Proof_Improve/proof_improve_finder.ML
     Author:     Daniel Lipkin, TU Muenchen
 
-Finding proof alternatives using sledgehammer.
+Finding proof alternatives using Sledgehammer.
 *)
 
 signature PROOF_IMPROVE_FINDER =
@@ -46,13 +46,43 @@ fun parse_sledgehammer_result (result: string) : string =
 
 fun find (st: Proof.state) =
   let
-    val generous_timeout = Time.scale 1.0 (Time.fromSeconds 20)
     val params = Sledgehammer_Commands.default_params \<^theory> []
+    val two_seconds = Time.fromSeconds 2
+
+    val timeout_params = {
+      debug = #debug params,
+      verbose = #verbose params,
+      overlord = #overlord params,
+      spy = #spy params,
+      provers = #provers params,
+      abduce = #abduce params,
+      falsify = #falsify params,
+      type_enc = #type_enc params,
+      strict = #strict params,
+      lam_trans = #lam_trans params,
+      uncurried_aliases = #uncurried_aliases params,
+      learn = #learn params,
+      fact_filter = #fact_filter params,
+      induction_rules = #induction_rules params,
+      max_facts = #max_facts params,
+      fact_thresholds = #fact_thresholds params,
+      max_mono_iters = #max_mono_iters params,
+      max_new_mono_instances = #max_new_mono_instances params,
+      max_proofs = #max_proofs params,
+      isar_proofs = #isar_proofs params,
+      compress = #compress params,
+      try0 = #try0 params,
+      smt_proofs = #smt_proofs params,
+      minimize = #minimize params,
+      slices = #slices params,
+      timeout = two_seconds,
+      preplay_timeout = two_seconds,
+      expect = #expect params
+      }
+
     val fact_override = {add = [], del = [], only = false}
-    val (_, (outcome, try_this)) = (Timeout.apply generous_timeout
-      Sledgehammer.run_sledgehammer params Sledgehammer_Prover.Normal
-              NONE 1 fact_override st handle Timeout.TIMEOUT _  =>
-              (false, (Sledgehammer.SH_None, "")));
+    val (_, (outcome, try_this)) =  Sledgehammer.run_sledgehammer timeout_params
+      Sledgehammer_Prover.Normal NONE 1 fact_override st
   in
     case outcome of
       Sledgehammer.SH_Some (prover_result, _) =>

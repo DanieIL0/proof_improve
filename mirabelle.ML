@@ -191,20 +191,23 @@ val whitelist = ["apply", "by", "proof", "unfolding", "using"];
 fun calculate_depth (spans: Command_Span.span list): int =
   let
     val tokens = List.concat (List.map Command_Span.content spans)
-    fun depth_aux (toks, current_depth) =
+
+    fun depth_aux (toks, current_depth, first_apply) =
       case toks of
           [] => current_depth
         | tok::rest =>
             if Token.is_command tok then
               (case Token.content_of tok of
-                 "proof" => depth_aux (rest, current_depth + 1)
-               | "qed" => depth_aux (rest, current_depth - 1)
-               | "done" => depth_aux (rest, current_depth - 1)
-               | _ => depth_aux (rest, current_depth))
+                 "proof" => depth_aux (rest, current_depth + 1, first_apply)
+               | "qed" => depth_aux (rest, current_depth - 1, true)
+               | "done" => depth_aux (rest, current_depth - 1, true)
+               | "apply" => if first_apply then depth_aux (rest, current_depth + 1, false)
+                            else depth_aux (rest, current_depth, first_apply)
+               | _ => depth_aux (rest, current_depth, first_apply))
             else
-              depth_aux (rest, current_depth)
+              depth_aux (rest, current_depth, first_apply)
   in
-    depth_aux (tokens, 0)
+    depth_aux (tokens, 0, true)
   end;
 
 fun concat_tokens (toks: Token.T list, acc: string): string =
@@ -224,7 +227,7 @@ fun concat_tokens (toks: Token.T list, acc: string): string =
 
 fun take_relevant_spans (spans: Command_Span.span list): Command_Span.span list =
   let
-    val initial_depth = calculate_depth [List.hd spans]
+    val initial_depth = 0
 
     fun take_spans (remaining_spans, current_depth, acc) =
       case remaining_spans of
@@ -330,7 +333,9 @@ val _ =
             let
               val thy_long_name = Context.theory_long_name thy;
               val check_thy = check_theory thy_long_name;
-              val all_theory_segments = List.concat (List.map #2 loaded_theories);
+              val filtered_theories = List.filter (fn (thy, _) => Context.proper_subthy (\<^theory>, thy)) loaded_theories;
+              val all_theory_segments = List.concat (List.map #2 filtered_theories);
+
               fun make_command (command, spans) =
                 let
                   val {command = tr, prev_state = st, state = st', ...} = command;
