@@ -186,7 +186,7 @@ fun check_theories strs =
 
 (* presentation hook *)
 
-val whitelist = ["apply", "by", "proof", "by"];
+val whitelist = ["apply", "by", "proof", "unfolding", "using"];
 
 fun calculate_depth (spans: Command_Span.span list): int =
   let
