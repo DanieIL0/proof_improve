@@ -192,20 +192,22 @@ fun calculate_depth (spans: Command_Span.span list): int =
   let
     val tokens = List.concat (List.map Command_Span.content spans)
 
-    fun depth_aux (toks, current_depth, first_apply) =
+    fun depth_aux (toks, current_depth, continue) =
       case toks of
           [] => current_depth
         | tok::rest =>
             if Token.is_command tok then
               (case Token.content_of tok of
-                 "proof" => depth_aux (rest, current_depth + 1, first_apply)
+                 "proof" => depth_aux (rest, current_depth + 1, true)
                | "qed" => depth_aux (rest, current_depth - 1, true)
                | "done" => depth_aux (rest, current_depth - 1, true)
-               | "apply" => if first_apply then depth_aux (rest, current_depth + 1, false)
-                            else depth_aux (rest, current_depth, first_apply)
-               | _ => depth_aux (rest, current_depth, first_apply))
+               | "apply" => if continue then depth_aux (rest, current_depth + 1, false)
+                            else depth_aux (rest, current_depth, continue)
+               | "by" => if not continue then depth_aux (rest, current_depth - 1, true)
+                            else depth_aux (rest, current_depth, continue)
+               | _ => depth_aux (rest, current_depth, continue))
             else
-              depth_aux (rest, current_depth, first_apply)
+              depth_aux (rest, current_depth, continue)
   in
     depth_aux (tokens, 0, true)
   end;
@@ -265,47 +267,23 @@ fun find_starting_segment_index (target_segment, segments) =
   let
     val target_line_opt = Position.line_of (Toplevel.pos_of (#command target_segment))
     fun get_line (segment) = Position.line_of (Toplevel.pos_of (#command segment))
-    fun compare_options (opt1, opt2) = case (opt1, opt2) of
-        (NONE, NONE) => EQUAL
-      | (NONE, SOME _) => LESS
-      | (SOME _, NONE) => GREATER
-      | (SOME x, SOME y) => Int.compare (x, y)
+    fun is_equal_target_line (segment) =
+      case (get_line(segment), target_line_opt) of
+        (NONE, NONE) => true
+        | (SOME line1, SOME line2) => line1 = line2
+        | _ => false
 
-    fun binary_search (low, high) =
-      if low > high then NONE
-      else
-        let
-          val mid = (low + high) div 2
-          val mid_segment = List.nth (segments, mid)
-          val mid_line_opt = get_line (mid_segment)
-        in
-          case compare_options (target_line_opt, mid_line_opt) of
-              EQUAL => SOME mid
-            | LESS => binary_search (low, mid - 1)
-            | GREATER => binary_search (mid + 1, high)
-        end
-
-    fun linear_search (index, direction) =
-      if index < 0 orelse index >= List.length segments then NONE
-      else
-        let
-          val segment = List.nth (segments, index)
-        in
-          if segment_equal(target_segment, segment) then SOME index
-          else linear_search (index + direction, direction)
-        end
-
+    fun linear_search (segments, index) =
+      case segments of
+        [] => NONE
+      | segment :: rest =>
+          if is_equal_target_line segment then
+            if segment_equal (segment, target_segment) then SOME index
+            else linear_search (rest, index + 1)
+          else linear_search (rest, index + 1)
   in
-    case binary_search (0, List.length segments - 1) of
-      NONE => 0
-    | SOME idx =>
-        case linear_search (idx, ~1) of
-          SOME found_idx => found_idx
-        | NONE => case linear_search (idx + 1, 1) of
-                     SOME found_idx => found_idx
-                   | NONE => 0
-  end
-
+    linear_search (segments, 0)
+  end;
 
 val _ =
   Build.add_hook (fn qualifier => fn loaded_theories =>
@@ -341,8 +319,11 @@ val _ =
                   val {command = tr, prev_state = st, state = st', ...} = command;
                   val name = Toplevel.name_of tr;
                   val pos = Toplevel.pos_of tr;
-                  val start_idx = find_starting_segment_index (command, all_theory_segments);
-                  val relevant_segments_from_theory = List.drop (all_theory_segments, start_idx);
+                  val start_idx_opt = find_starting_segment_index (command, all_theory_segments);
+                  val relevant_segments_from_theory =
+                    case start_idx_opt of
+                    NONE => []
+                    | SOME start_idx => List.drop (all_theory_segments, start_idx);
                   val spans_from_segments = List.map (fn {span, ...} => span) relevant_segments_from_theory;
                   val relevant_spans = take_relevant_spans spans_from_segments;
       in

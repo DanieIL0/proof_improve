@@ -38,7 +38,7 @@ fun string_of_outcome outcome =
 fun proof_improve st proof_text =
   let
     val (original_score, original_log) = score
-      (List.length (Proof.the_fact_or_facts st) + 1) proof_text
+      (List.length (Proof.the_fact_or_facts st)) proof_text
     val original_score_msg = "Scorer result (original): " ^ Real.toString original_score
     val find_result = find st
     val initial_log = original_log ^ original_score_msg

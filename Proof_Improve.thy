@@ -2,7 +2,7 @@
     Author:     Daniel Lipkin, TU Muenchen
 *)
 
-section ‹Proof Improve: Automatic Proof Improvement›
+section ‹Proof Improve: Semi-Automatic Proof Improvement›
 
 theory Proof_Improve
   imports Sledgehammer

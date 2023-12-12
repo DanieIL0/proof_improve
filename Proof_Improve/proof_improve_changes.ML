@@ -10,7 +10,7 @@ sig
   val create : unit -> proof_changes
   val add_change : string * string * Position.T -> proof_changes -> proof_changes
   val add_unsuccessful_call : proof_changes -> proof_changes
-  val tostring : proof_changes -> string
+  val to_string : proof_changes -> string
 end;
 
 structure Proof_Improve_Changes : PROOF_IMPROVE_CHANGES =
@@ -67,7 +67,7 @@ fun is_subset (ProofChange {position = pos1, ...})
             end
       | _ => false
 
-fun tostring (ProofChanges {changes, total_proofs, successful_changes}) =
+fun to_string (ProofChanges {changes, total_proofs, successful_changes}) =
   let
     val sorted_changes = sort_proof_changes changes
 

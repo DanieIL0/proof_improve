@@ -48,9 +48,9 @@ struct
     weight_lemma = 0.1,
     weight_entropy = 0.05,
     weight_symbol_to_text_ratio = 0.05,
-    weight_depth = 0.145,
+    weight_depth = 0.14,
     weight_apply = 0.4,
-    weight_used_methods = 0.005,
+    weight_used_methods = 0.01,
 
     max_length = 1000,
     max_lemma = 10,

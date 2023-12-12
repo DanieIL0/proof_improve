@@ -47,7 +47,7 @@ fun parse_sledgehammer_result (result: string) : string =
 fun find (st: Proof.state) =
   let
     val params = Sledgehammer_Commands.default_params \<^theory> []
-    val two_seconds = Time.fromSeconds 2
+    val four_seconds = Time.fromSeconds 4
 
     val timeout_params = {
       debug = #debug params,
@@ -75,8 +75,8 @@ fun find (st: Proof.state) =
       smt_proofs = #smt_proofs params,
       minimize = #minimize params,
       slices = #slices params,
-      timeout = two_seconds,
-      preplay_timeout = two_seconds,
+      timeout = four_seconds,
+      preplay_timeout = four_seconds,
       expect = #expect params
       }
 

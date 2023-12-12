@@ -59,11 +59,11 @@ fun calculate_used_methods_score proof_text : real option =
         fun score_method method =
             if String.isSubstring method proof_text then
                if method = "intro" orelse method = "elim" orelse method = "unfold"
-                then 50.0
+                then 25.0
                 else if method = "iprover" orelse method = "blast" orelse method = "fast" orelse
                         method = "simp" orelse method = "force" orelse method = "auto" orelse
                         method = "arith"
-                then 100.0
+                then 50.0
                 else 0.0
             else 0.0
 
@@ -80,24 +80,33 @@ fun calculate_depth proof_text =
     val tokens = String.tokens (fn c => c = #" ") proof_text
 
     fun is_command token =
-      List.exists (fn cmd => cmd = token) ["proof", "qed", "done", "apply"]
+      List.exists (fn cmd => cmd = token) ["proof", "qed", "done", "apply", "by"]
 
-    fun depth_aux (toks, current_depth, first_apply) =
+    fun depth_aux (toks, current_depth, max_depth, continue) =
       case toks of
-          [] => current_depth
+          [] => max_depth
         | tok::rest =>
-            if is_command tok then
-              case tok of
-                 "proof" => depth_aux (rest, current_depth + 1, first_apply)
-               | "qed" => depth_aux (rest, current_depth - 1, true)
-               | "done" => depth_aux (rest, current_depth - 1, true)
-               | "apply" => if first_apply then depth_aux (rest, current_depth + 1, false)
-                            else depth_aux (rest, current_depth, first_apply)
-               | _ => depth_aux (rest, current_depth, first_apply)
-            else
-              depth_aux (rest, current_depth, first_apply)
+            let
+              val new_depth =
+                case tok of
+                   "proof" => current_depth + 1
+                 | "qed" => current_depth - 1
+                 | "done" => current_depth - 1
+                 | "apply" => if continue then current_depth + 1 else current_depth
+                 | "by" => if not continue then current_depth - 1 else current_depth
+                 | _ => current_depth
+            in
+              if is_command tok then
+                depth_aux (rest, new_depth, Int.max(max_depth, new_depth),
+                          case tok of
+                             "apply" => not continue
+                           | "by" => continue
+                           | _ => true)
+              else
+                depth_aux (rest, current_depth, max_depth, continue)
+            end
   in
-    depth_aux (tokens, 0, true)
+    depth_aux (tokens, 0, 0, true)
   end;
 
 fun count_applys proof_text =
@@ -187,8 +196,8 @@ fun score facts proof_text  =
     val used_methods_score_opt = calculate_used_methods_score proof_text
     val (used_methods_score, weight_used_methods, used_methods_report) =
          case used_methods_score_opt of
-              NONE => (0.0, 0.0, "no by's found\n")
-              | SOME x => (x, get_weight_used_methods (), "Used methods score: " ^ Real.toString x ^ "\n")
+              NONE => (0.0, 0.0, "no by's or proof's found\n")
+              | SOME x => (Real.max (x, 100.0), get_weight_used_methods (), "Used methods score: " ^ Real.toString x ^ "\n")
 
     val weighted_sum = (length_score * weight_length) + (fact_score * weight_lemma) +
                        (entropy_score * weight_entropy) + (depth_score * weight_depth) +
