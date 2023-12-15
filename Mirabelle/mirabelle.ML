@@ -205,34 +205,39 @@ fun concat_tokens (toks: Token.T list, acc: string): string =
 
 fun take_relevant_spans (spans: Command_Span.span list): Command_Span.span list =
   let
-    val tokens = List.concat (List.map Command_Span.content spans)
-
-    fun depth_aux (toks, current_depth, continue, remaining_spans, acc) =
-      case (toks, remaining_spans) of
-          ([], []) => List.rev acc
-        | (tok::rest, span::span_rest) =>
-            if Token.is_command tok then
-              (case Token.content_of tok of
-                 "proof" => depth_aux (rest, current_depth + 1, continue, span_rest, acc)
-               | "qed" => depth_aux (rest, current_depth - 1, true, span_rest, acc)
-               | "done" => depth_aux (rest, current_depth - 1, true, span_rest, acc)
-               | "apply" => if continue then depth_aux (rest, current_depth + 1, false, span_rest, acc)
-                            else depth_aux (rest, current_depth, false, span_rest, acc)
-               | "by" => if not continue then depth_aux (rest, current_depth - 1, true, span_rest, acc)
-                         else depth_aux (rest, current_depth, true, span_rest, acc)
-               | _ => depth_aux (rest, current_depth, continue, span_rest, acc))
+    fun depth_aux (remaining_spans, current_depth, continue, acc_spans) =
+      case remaining_spans of
+        [] => List.rev acc_spans
+      | span::rest =>
+          let
+            val tokens = Command_Span.content span
+            val (new_depth, new_continue) = calculate_depth_aux (tokens, current_depth, continue)
+          in
+            if new_depth = 0 then
+              List.rev (span::acc_spans)
             else
-              depth_aux (rest, current_depth, continue, span_rest, acc)
-        | (_, span::span_rest) =>
-            if current_depth = 0 then
-              List.rev acc
-            else
-              depth_aux (List.concat (List.map Command_Span.content [span]), current_depth, true, span_rest, span::acc)
+              depth_aux (rest, new_depth, new_continue, span::acc_spans)
+          end
 
+    and calculate_depth_aux (toks, current_depth, continue) =
+      case toks of
+        [] => (current_depth, continue)
+      | tok::rest =>
+          if Token.is_command tok then
+            (case Token.content_of tok of
+               "proof" => calculate_depth_aux (rest, current_depth + 1, true)
+             | "qed" => calculate_depth_aux (rest, current_depth - 1, true)
+             | "done" => calculate_depth_aux (rest, current_depth - 1, true)
+             | "apply" => if continue then calculate_depth_aux (rest, current_depth + 1, false)
+                          else calculate_depth_aux (rest, current_depth, continue)
+             | "by" => if not continue then calculate_depth_aux (rest, current_depth - 1, true)
+                          else calculate_depth_aux (rest, current_depth, continue)
+             | _ => calculate_depth_aux (rest, current_depth, continue))
+          else
+            calculate_depth_aux (rest, current_depth, continue)
   in
-    depth_aux (tokens, 0, true, spans, [])
+    depth_aux (spans, 0, true, [])
   end;
-
 
 fun segment_equal (segment1: {command: Toplevel.transition, prev_state: Toplevel.state, span: Command_Span.span, state: Toplevel.state},
                    segment2: {command: Toplevel.transition, prev_state: Toplevel.state, span: Command_Span.span, state: Toplevel.state}): bool =
