@@ -92,7 +92,7 @@ fun find (st: Proof.state) =
              val facts = #used_facts prover_result
              val result = parse_sledgehammer_result try_this
            in
-             if String.isSubstring "failed" result then
+             if String.isSubstring "failed" result orelse String.isSubstring "apply" result then
                NONE
              else
                SOME (List.length facts, parse_sledgehammer_result try_this)
