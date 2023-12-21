@@ -56,19 +56,21 @@ fun calculate_used_methods_score proof_text : real option =
                         |> List.filter (fn s => s = "apply" orelse s = "by" orelse s = "proof")
         val count_apply_bys = length apply_bys
 
-        fun score_method method =
+        fun score_method method = 
             if String.isSubstring method proof_text then
                if method = "intro" orelse method = "elim" orelse method = "unfold"
                 then 25.0
-                else if method = "iprover" orelse method = "blast" orelse method = "fast" orelse
-                        method = "simp" orelse method = "force" orelse method = "auto" orelse
+                else if method = "iprover" orelse method = "blast" orelse method = "fast" orelse 
+                        method = "simp" orelse method = "force" orelse method = "auto" orelse 
                         method = "arith"
-                then 50.0
+                     then 50.0
+                     else if method = "metis" 
+                          then 100.0
                 else 0.0
             else 0.0
 
-        val methods = ["iprover", "blast", "fast",
-                       "simp", "force", "auto", "arith"]
+        val methods = ["iprover", "blast", "fast", 
+                       "simp", "force", "auto", "arith", "metis"]
         val total_score = fold (fn method => fn acc => acc + score_method method) methods 0.0
     in
         if count_apply_bys = 0 then NONE
